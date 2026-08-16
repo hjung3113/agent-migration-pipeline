@@ -15,3 +15,13 @@ coverage/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# target/ build artifacts (patterns are global, they cover target/)
+# backend: uv/hatch, python caches (.venv/, __pycache__/, *.pyc covered above)
+*.egg-info/
+.uv/
+# frontend: node, bundler, lint caches (node_modules/, dist/, build/ covered above)
+*.tsbuildinfo
+.eslintcache
+.prettiercache
+.vite/

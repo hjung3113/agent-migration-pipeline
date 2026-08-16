@@ -16,6 +16,8 @@ Include as a supporting plugin for disciplined planning, implementation, review,
 
 Project-specific migration skills remain authoritative where they differ from generic Superpowers guidance.
 
+Pinned to `v6.3.0` (see resolved OQ-024 in `docs/05-open-questions.md`) rather than tracking the default branch, for reproducibility.
+
 ## Defer
 
 ### UI Inspector

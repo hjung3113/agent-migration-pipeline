@@ -46,10 +46,20 @@ Status values: `OPEN`, `CONFIRMED`, `NOT-APPLICABLE`, `DEFERRED`.
 
 | ID | Status | Question | Why it matters |
 |---|---|---|---|
-| OQ-024 | OPEN | Should Superpowers be pinned to a fixed tag after initial evaluation? | Reproducibility vs rapid updates. |
+| OQ-024 | CONFIRMED | Should Superpowers be pinned to a fixed tag after initial evaluation? | Reproducibility vs rapid updates. |
 | OQ-025 | DEFERRED | Does the React phase need UI Inspector MCP? | Add only when visual/component inspection provides real value. |
 | OQ-026 | DEFERRED | Is native OpenCode subagent orchestration insufficient at scale? | Only then evaluate a larger orchestration layer. |
 | OQ-027 | DEFERRED | Is Git-backed documentation insufficient for long-term agent memory? | Only then add an external memory system. |
+
+## Resolved
+
+### OQ-024 — Superpowers pinning
+
+**Status:** CONFIRMED (2026-08-16)
+
+Pin `superpowers` to a fixed tag (`v6.3.0`, latest at time of decision) in `opencode.json` instead of tracking the plugin's default branch.
+
+**Evidence:** `git ls-remote --tags https://github.com/obra/superpowers.git` — reproducibility outweighs picking up unreviewed upstream changes automatically for a project-local, disk-backed pipeline. Bump the tag explicitly and re-run `scripts/validate_scaffold.py` when upgrading.
 
 ## Update rule
 

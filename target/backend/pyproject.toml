@@ -49,11 +49,64 @@ strict = true
 root_package = "app"
 
 [[tool.importlinter.contracts]]
-name = "Layered architecture: api -> services -> repositories, domain has no upward deps"
+name = "Layered architecture: each layer may depend only on layers below it (app.platform -> api -> services -> repositories -> domain); skipping layers is allowed, upward deps are not"
 type = "layers"
 layers = [
+    "app.platform",
     "app.api",
     "app.services",
     "app.repositories",
     "app.domain",
+]
+
+# Platform adapter boundary guard (S-008/ADR-0005, amended post-review;
+# docs/04 "Design rule"; RULEBOOK Platform/DLL #1-#2). Belt-and-braces with
+# the layers contract above: app.platform sits above api/services/
+# repositories/domain in the layers contract (so none of them may import it,
+# including indirectly), and this contract additionally restricts
+# app.platform's own reach into core — the adapter must go through
+# app.services like any other caller, not reach past it into
+# app.repositories directly. app.domain (shared value types) stays allowed
+# from app.platform since those are non-behavioral. If either contract
+# fails, platform/host dependency has leaked into or through core in a way
+# this boundary was meant to prevent.
+[[tool.importlinter.contracts]]
+name = "Platform isolation: core layers (api, services, repositories, domain) must not import app.platform — a violation means platform dependency leaked into core"
+type = "forbidden"
+source_modules = [
+    "app.api",
+    "app.services",
+    "app.repositories",
+    "app.domain",
+]
+forbidden_modules = [
+    "app.platform",
+]
+
+[[tool.importlinter.contracts]]
+name = "Platform adapter must route through app.services, not reach directly into app.repositories"
+type = "forbidden"
+source_modules = [
+    "app.platform",
+]
+forbidden_modules = [
+    "app.repositories",
+]
+
+# Composition-root exemption guard: app.main is deliberately outside the
+# contracts above (something must wire the adapter when one exists), but
+# that exemption must not turn app.main into a utility hub other modules
+# import from. Nothing may import app.main; it stays a leaf.
+[[tool.importlinter.contracts]]
+name = "Composition root isolation: nothing may import app.main — it stays a leaf, not a utility hub"
+type = "forbidden"
+source_modules = [
+    "app.platform",
+    "app.api",
+    "app.services",
+    "app.repositories",
+    "app.domain",
+]
+forbidden_modules = [
+    "app.main",
 ]

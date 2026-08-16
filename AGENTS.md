@@ -68,6 +68,12 @@ Discover -> Specify -> Grade Evidence -> Human Gate if needed
          -> PASS or Process/Rule Fix -> Repeat
 ```
 
+## Handoff rule
+
+`HANDOFF.md` at the repo root is the single handoff file. Always update it
+in place at the end of a session; never create a second handoff file
+(dated, numbered, or otherwise). It is committed to Git, not gitignored.
+
 ## Stop conditions
 
 Stop and record an open question rather than guessing when a decision depends on:

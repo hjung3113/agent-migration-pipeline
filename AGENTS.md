@@ -80,8 +80,17 @@ Stop and record an open question rather than guessing when a decision depends on
 - security/authentication requirements not visible in code
 - deployment topology not yet known
 
+## Handoff documentation
+
+`HANDOFF.md` at the repository root is the single, consolidated location for
+handoff documentation (plans, work breakdowns, and notes meant to let another
+session or another person pick up in-progress work). Do not create separate
+handoff files under `docs/` or elsewhere; add new sections to `HANDOFF.md`
+instead.
+
 ## Important files
 
+- `HANDOFF.md` — consolidated handoff notes for resuming in-progress work
 - `docs/00-project-context.md` — project background and session-derived decisions
 - `docs/01-architecture.md` — pipeline/environment architecture
 - `docs/02-migration-pipeline.md` — phase flow and gates

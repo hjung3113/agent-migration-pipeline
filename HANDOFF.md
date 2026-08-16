@@ -1,4 +1,10 @@
-# Design Document Hardening Plan
+# Handoff
+
+Single consolidated handoff document for this repository (see `AGENTS.md` ->
+Handoff documentation). New handoff notes are added here, not as separate
+files elsewhere in the tree.
+
+## Design Document Hardening Plan
 
 Tracks the plan for making the pipeline's own design documents (agent/command/skill
 docs, templates, gate criteria, state files) concrete and internally consistent,

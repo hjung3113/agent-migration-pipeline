@@ -20,6 +20,7 @@ The legacy component is currently invoked by an external company platform as a D
 10. Reviewer and verifier agents must be independent from the implementer role.
 11. When the same defect pattern repeats, update the rule/process before applying repetitive local fixes.
 12. Persist queue, decisions, evidence, and unresolved items on disk so another session can resume without relying on chat history.
+13. **Design gate: no implementation until the user explicitly says design is done and to start building.** For any slice with lock-in risk medium or higher, produce the design artifact first (ADR / RULEBOOK amendment / behavior contract) and stop — do not dispatch implementation in the same pass, and do not let an implementer resolve an undecided design point on the spot. Wait for an explicit go-ahead from the user before writing code against it.
 
 ## Required artifacts per feature
 

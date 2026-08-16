@@ -30,6 +30,6 @@ Runnable regardless of legacy access. See SLICES-DRAFT.md for rationale/citation
 | S-007 | DONE | 보통 | 중 | Target monorepo skeleton (React/FastAPI/Postgres, no business logic) | target/{backend,frontend}, docker-compose.yml, docs/adr/0004 (Opus reviewed, import-linter/mypy-strict/compose-healthcheck/port-binding fixed; httpx2 false-positive verified clean) |
 | S-008 | DONE | 보통 | 상 | Platform adapter boundary contract + lint guard | app.platform/, 4 import-linter contracts, docs/adr/0005 (Opus reviewed, scoped sole-namespace to behavior + named dependency_overrides mechanism + constrained platform->core direction + app.main leaf guard) |
 | S-009 | DONE | 간단 | 중 | FastAPI request/response/error contract convention | app/api/errors.py, app/domain/errors.py, docs/templates/api-contract-checklist.md (Opus reviewed, 6 fixes: 500-handler envelope gap, phrase-derived code instability, status_code raise-site default, OpenAPI 422 mismatch, scalar-detail leak, dropped headers) |
-| S-010 | TODO | 보통 | 하 | Repo guard automation (validate_scaffold.py + OQ update checks) | CI/script additions |
+| S-010 | DONE | 보통 | 하 | Repo guard automation (validate_scaffold.py + OQ update checks) | .github/workflows/ci.yml, scripts/check_oq_updates.py, scripts/check_doc_links.py (lock-in low, no Opus review per policy) |
 | S-011 | TODO | 복잡 | 하 | Pipeline dry-run with synthetic feature + mutation self-test | dry-run report + rulebook/skill fixes |
 | S-012 | DONE | 간단 | 하 | Register approved slices into QUEUE/STATE | this table |

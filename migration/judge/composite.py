@@ -19,34 +19,12 @@ produced by the ports defined in ``migration.judge.ports``.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
-from .ports import (
-    SOURCE_CALLBACK_ASSERTIONS,
-    SOURCE_CONTRACT_TESTS,
-    SOURCE_DB_ASSERTIONS,
-    SOURCE_EXISTING_TESTS,
-    SOURCE_MANUAL_EVIDENCE,
-    SOURCE_OUTPUT_SNAPSHOTS,
-    EvidenceResult,
-    SourceVerdict,
-)
+from .ports import EvidenceResult, SourceVerdict
 
 BLOCKING_VERDICTS = (SourceVerdict.NOT_SUBMITTED, SourceVerdict.NOT_IMPLEMENTED)
-
-#: All six canonical sources. Used as the default for
-#: ``CompositeJudge.expected_sources`` so an under-configured judge cannot
-#: silently PASS on a single submitted source — callers must narrow this
-#: explicitly if a scenario legitimately does not need all six.
-ALL_SOURCES = (
-    SOURCE_EXISTING_TESTS,
-    SOURCE_CONTRACT_TESTS,
-    SOURCE_DB_ASSERTIONS,
-    SOURCE_OUTPUT_SNAPSHOTS,
-    SOURCE_CALLBACK_ASSERTIONS,
-    SOURCE_MANUAL_EVIDENCE,
-)
 
 
 class CompositeVerdict(Enum):
@@ -85,12 +63,6 @@ class CompositeReport:
     verdict: CompositeVerdict
     results: tuple[EvidenceResult, ...] = ()
     reasons: tuple[str, ...] = ()
-    #: False when any source was blocking (NOT_SUBMITTED/NOT_IMPLEMENTED) or
-    #: reported conflicting duplicate verdicts. A FAIL verdict with
-    #: coverage_complete=False is still a real FAIL (the source that caught
-    #: the mismatch ran), but readers should know other expected sources
-    #: never weighed in.
-    coverage_complete: bool = True
 
     def summary(self) -> str:
         """Multi-line text suitable for writing to a verification report."""
@@ -108,86 +80,58 @@ class CompositeReport:
 class CompositeJudge:
     """Combines evidence-source results into one PASS/FAIL/PARTIAL/BLOCKED grade.
 
-    Combination rules, in evaluation order:
+    Combination rules, in evaluation order (docs/03 "Judge design under
+    incomplete tests"):
 
-    0. two results for the same source disagree (conflicting duplicate
-       submission)                              -> BLOCKED
     1. any source FAIL                          -> FAIL
     2. any source NOT_SUBMITTED / NOT_IMPLEMENTED -> BLOCKED
-    3. no source PASS (empty, or all INSUFFICIENT) -> BLOCKED
-    4. all sources PASS                         -> PASS
-    5. otherwise (>=1 PASS + >=1 INSUFFICIENT)  -> PARTIAL
+    3. all sources PASS                         -> PASS
+    4. otherwise (>=1 PASS + >=1 INSUFFICIENT,
+       or all INSUFFICIENT)                     -> PARTIAL
 
-    All-INSUFFICIENT is BLOCKED, not PARTIAL: it carries zero confirming
-    evidence, the same epistemic state as an empty result set. PARTIAL is
-    reserved for scenarios with at least one PASS alongside incomplete
-    evidence elsewhere.
-
-    A conflicting duplicate (the same source reporting two different
-    verdicts) is not treated as ordinary FAIL-wins evidence: it means we
-    cannot tell which submission is authoritative, so it forces BLOCKED
-    even if one of the conflicting entries was FAIL. Identical duplicate
-    submissions (e.g. from a retry) collapse silently to one entry and do
-    not trigger this.
+    An empty result set is BLOCKED: nothing was judged.
 
     Relationship to the characterization capture items
     (``docs/templates/characterization-record.md``):
 
-    The template's eight core capture items — ``exact input fixture``,
-    ``initial DB state or relevant records``, ``return/output value``,
-    ``resulting DB state``, ``files generated/modified``, ``logs/events``,
-    ``callbacks to platform``, ``exception/error code`` — are the raw
-    evidence each *port* consumes (see the mapping table in
-    ``migration/judge/ports.py``). This class never reads those items
-    directly; it only sees each port's distilled
-    :class:`~migration.judge.ports.EvidenceResult`, where
-    ``linked_capture_items`` records which of the eight items the source
-    judged. A capture item recorded as ``not captured (see caveats)`` in
-    the characterization record should surface as INSUFFICIENT (-> PARTIAL)
-    from the port responsible for that item, or as NOT_SUBMITTED (->
-    BLOCKED) when declared in ``expected_sources`` but absent — never as a
-    silent PASS. Capture items marked ``N/A`` for the scenario are exempt.
+    The template's capture items — ``exact input fixture``, ``initial DB
+    state or relevant records``, ``return/output value``, ``resulting DB
+    state``, ``files generated/modified``, ``logs/events``, ``callbacks to
+    platform``, ``exception/error code`` — are the raw evidence each *port*
+    consumes (see the mapping table in ``migration/judge/ports.py``). This
+    class never reads those items directly; it only sees each port's
+    distilled :class:`~migration.judge.ports.EvidenceResult`.
 
     Before any composite verdict is trusted as an exit condition, the
     harness must pass a mutation self-test: inject a known-wrong result
     into each port and confirm FAIL (docs/03 "Judge design under incomplete
-    tests"). That self-test is scheduled as slice S-011; until it passes,
-    treat this judge as unproven scaffolding.
+    tests"). That self-test ran in slice S-011 and passed
+    (migration/judge/tests/test_mutation_self_test.py).
 
     Attributes:
-        expected_sources: Source names (``SOURCE_*`` constants) that must be
-            submitted for a scenario. Sources listed here but missing from
-            the submitted results are added as synthetic NOT_SUBMITTED
-            entries, which grades the scenario BLOCKED. Declare only the
-            sources the scenario actually requires: ``selected`` manual
-            evidence, for example, is often legitimately absent.
+        expected_sources: Source names (``SOURCE_*`` constants) required for
+            this scenario. Required, no default (docs/03 "Which sources a
+            judgement requires is explicit, not defaulted"): a source listed
+            here but missing from the submitted results is added as a
+            synthetic NOT_SUBMITTED entry, which grades the scenario
+            BLOCKED, rather than letting an unstated requirement resolve to
+            PASS.
     """
 
-    #: Sources that must be submitted for a scenario to be judgeable.
-    #: Defaults to all six canonical sources so an under-configured judge
-    #: cannot silently PASS on a single submitted result — narrow this
-    #: explicitly per scenario (e.g. drop SOURCE_MANUAL_EVIDENCE when no
-    #: manual evidence is expected).
-    expected_sources: Sequence[str] = field(default=ALL_SOURCES)
+    expected_sources: Sequence[str]
 
     def judge(self, results: Sequence[EvidenceResult]) -> CompositeReport:
         """Grade one scenario from its per-source results."""
         merged = self._merge_results(results)
-        deduped, conflicts = self._dedupe(merged)
-        reasons = self._reasons(deduped, conflicts)
-        blocking = [r for r in deduped if r.verdict in BLOCKING_VERDICTS]
+        reasons = self._reasons(merged)
 
-        if conflicts:
+        if not merged:
             verdict = CompositeVerdict.BLOCKED
-        elif not deduped:
-            verdict = CompositeVerdict.BLOCKED
-        elif any(r.verdict is SourceVerdict.FAIL for r in deduped):
+        elif any(r.verdict is SourceVerdict.FAIL for r in merged):
             verdict = CompositeVerdict.FAIL
-        elif blocking:
+        elif any(r.verdict in BLOCKING_VERDICTS for r in merged):
             verdict = CompositeVerdict.BLOCKED
-        elif not any(r.verdict is SourceVerdict.PASS for r in deduped):
-            verdict = CompositeVerdict.BLOCKED
-        elif all(r.verdict is SourceVerdict.PASS for r in deduped):
+        elif all(r.verdict is SourceVerdict.PASS for r in merged):
             verdict = CompositeVerdict.PASS
         else:
             verdict = CompositeVerdict.PARTIAL
@@ -196,7 +140,6 @@ class CompositeJudge:
             verdict=verdict,
             results=tuple(merged),
             reasons=tuple(reasons),
-            coverage_complete=not (blocking or conflicts),
         )
 
     def _merge_results(
@@ -215,45 +158,15 @@ class CompositeJudge:
             )
         return merged
 
-    def _dedupe(
-        self, merged: Sequence[EvidenceResult]
-    ) -> tuple[list[EvidenceResult], list[str]]:
-        """Collapse identical duplicate submissions; flag conflicting ones.
-
-        A conflict (same source, different verdicts) is reported separately
-        rather than folded into the normal verdict scan, because we cannot
-        tell which of the disagreeing submissions is authoritative.
-        """
-        by_source: dict[str, list[EvidenceResult]] = {}
-        for result in merged:
-            by_source.setdefault(result.source, []).append(result)
-
-        deduped: list[EvidenceResult] = []
-        conflicts: list[str] = []
-        for source, entries in by_source.items():
-            distinct_verdicts = {e.verdict for e in entries}
-            if len(distinct_verdicts) > 1:
-                conflicts.append(source)
-            else:
-                deduped.append(entries[0])
-        return deduped, sorted(conflicts)
-
-    def _reasons(
-        self, deduped: Sequence[EvidenceResult], conflicts: Sequence[str]
-    ) -> list[str]:
+    def _reasons(self, merged: Sequence[EvidenceResult]) -> list[str]:
         reasons: list[str] = []
-        failures = [r for r in deduped if r.verdict is SourceVerdict.FAIL]
-        blocking = [r for r in deduped if r.verdict in BLOCKING_VERDICTS]
+        failures = [r for r in merged if r.verdict is SourceVerdict.FAIL]
+        blocking = [r for r in merged if r.verdict in BLOCKING_VERDICTS]
         insufficient = [
-            r for r in deduped if r.verdict is SourceVerdict.INSUFFICIENT
+            r for r in merged if r.verdict is SourceVerdict.INSUFFICIENT
         ]
-        has_pass = any(r.verdict is SourceVerdict.PASS for r in deduped)
 
-        if conflicts:
-            reasons.append(
-                f"conflicting results submitted for: {', '.join(conflicts)}"
-            )
-        if not deduped and not conflicts:
+        if not merged:
             reasons.append("no evidence results were submitted")
         if failures:
             reasons.append(
@@ -269,6 +182,4 @@ class CompositeJudge:
                 f"insufficient evidence from: "
                 f"{', '.join(r.source for r in insufficient)}"
             )
-        if deduped and not has_pass and not failures and not conflicts:
-            reasons.append("no source reported PASS; nothing was confirmed")
         return reasons

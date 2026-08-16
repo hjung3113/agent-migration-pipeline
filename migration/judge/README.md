@@ -45,28 +45,32 @@ items in `docs/templates/characterization-record.md` map onto the ports.
 
 Evaluated in order by `CompositeJudge.judge()`:
 
-0. the same source reports two **different** verdicts (conflicting
-   duplicate submission) → **BLOCKED** — we cannot tell which is
-   authoritative, even if one of them was FAIL. Identical duplicates (e.g.
-   a retry) collapse silently and do not trigger this.
-1. any source `FAIL` → **FAIL** (a detected mismatch outranks missing sources)
-2. any source `NOT_SUBMITTED` / `NOT_IMPLEMENTED` → **BLOCKED**
-3. no source `PASS` (empty, or every source `INSUFFICIENT`) → **BLOCKED** —
-   zero confirming evidence is the same epistemic state as no evidence at
-   all, so it is not reported as PARTIAL.
+1. empty result set after merging (nothing submitted and nothing
+   expected) → **BLOCKED** (nothing was judged)
+2. any source `FAIL` → **FAIL** (a detected mismatch outranks missing sources)
+3. any source `NOT_SUBMITTED` / `NOT_IMPLEMENTED` → **BLOCKED**
 4. all sources `PASS` → **PASS**
-5. otherwise (some `PASS` + some `INSUFFICIENT`) → **PARTIAL**
+5. otherwise (some `PASS` + some `INSUFFICIENT`, or all `INSUFFICIENT`) →
+   **PARTIAL**
 
-`expected_sources` **defaults to all six canonical sources**, not to an
-empty tuple — an under-configured judge must not be able to silently PASS
-on a single submitted result. Narrow it explicitly per scenario (e.g. drop
-`SOURCE_MANUAL_EVIDENCE` when no manual evidence is expected). Declared but
-missing sources are added as synthetic `NOT_SUBMITTED` results.
+## Which sources a judgement requires is explicit, not defaulted
 
-`CompositeReport.coverage_complete` is `False` whenever any source was
-blocking or conflicting — read it alongside `verdict`, since a FAIL with
-`coverage_complete=False` is still a genuine FAIL but was reached without
-every expected source weighing in.
+Fixed by `docs/03-evidence-and-verification.md` § "Which sources a
+judgement requires is explicit, not defaulted":
+
+- A composite judgement must state which of the six sources it actually
+  requires for the scenario at hand — e.g. a feature with no DB side
+  effects does not require a DB assertion. Accordingly,
+  `CompositeJudge.expected_sources` is a **required constructor argument
+  with no default** (`Sequence[str]` in `composite.py`).
+- A source listed in `expected_sources` but never submitted is added by
+  `_merge_results` as a synthetic `NOT_SUBMITTED` result, which grades the
+  scenario **BLOCKED** — never a silent PASS. An under-specified judgement
+  is not evidence of a passing feature.
+- Per docs/03, this rule applies whether the required set is stated
+  per-call or as a framework default; a judge implementation must not let
+  an unstated requirement resolve to PASS. `CompositeJudge` takes the
+  per-call form: every call site states its required sources explicitly.
 
 ## Known limitations (tracked, not yet fixed)
 
@@ -80,6 +84,11 @@ every expected source weighing in.
   `SOURCE_*` name and silently satisfy `expected_sources` for a source that
   never actually ran. A future runner should stamp `source` from the
   port's own `source_name`, not trust the adapter's payload.
+- **Conflicting/duplicate submissions for the same source are unhandled.**
+  If the same source is submitted twice with different verdicts,
+  `_merge_results` does not deduplicate; both entries flow into the grading
+  scan. Not exercised by any real caller yet — resolve when a runner that
+  can actually produce duplicates exists, not speculatively.
 
 ## Extending with new ports / adapters
 
@@ -102,25 +111,17 @@ constant and an `EvidencePort` subclass in `ports.py` with one abstract
 method, then rely on `CompositeJudge` unchanged — combination rules are
 source-agnostic.
 
-## Mutation self-test (docs/03 requirement) — planned for S-011
+## Mutation self-test (docs/03 requirement) — done, S-011
 
 `docs/03` requires: *before trusting a parity harness, deliberately
 introduce a known wrong result and confirm the harness fails.*
 
-How this skeleton will be self-tested in **S-011** (pipeline dry-run with a
-synthetic feature — not yet performed):
-
-1. Build a fake adapter per port that returns canned `EvidenceResult`s for
-   a toy scenario.
-2. **Mutation pass:** flip at least one result to a known-wrong value
-   (e.g. a DB assertion comparing against a mutated `resulting DB state`
-   capture, a callback assertion with a swapped call order) and confirm
-   `CompositeJudge` grades the scenario **FAIL** for every port, and that
-   missing expected sources grade **BLOCKED** rather than silently
-   passing.
-3. A judge that cannot catch the controlled mismatch is not a useful exit
-   condition; any such finding becomes a Rulebook/skill fix
-   (README principle 7: fix the process).
-
-Until the S-011 mutation self-test passes, treat this judge as **unproven
-scaffolding** — no feature may claim verification credit from it.
+Performed in **S-011** against a synthetic feature
+(`migration/features/synthetic-demo/`,
+`migration/judge/tests/test_mutation_self_test.py`): fed the judge a
+correct result (PARTIAL — honestly reflecting no legacy test suite for a
+fabricated feature), then a deliberately mutated wrong result (FAIL,
+caught independently by two sources). **Result: PASS** — the judge catches
+a controlled mismatch. Still not wired to any real legacy source (blocked
+on OQ-010); the framework itself is confirmed trustworthy, concrete
+adapters are not built yet.

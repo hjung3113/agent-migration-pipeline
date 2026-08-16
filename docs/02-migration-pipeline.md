@@ -48,6 +48,10 @@ Each important rule receives supporting evidence and a confidence grade.
 
 Gate: unresolved semantics that materially affect implementation require human review or remain explicitly provisional.
 
+### Pilot selection
+
+The first migration pilot (QUEUE Q-006) is selected using the weighted rubric in `docs/templates/pilot-selection-rubric.md` (S-006): side-effect observability, DB logic scale, DLL/platform-boundary representativeness, blast radius, existing-test baseline, and business importance. Scores inform the choice; the final selection is a human gate, not an automatic argmax. Material new facts from discovery trigger a re-score — stale scores are not reused.
+
 ## Phase 3 — Target design
 
 Redesign the feature for the target web architecture.

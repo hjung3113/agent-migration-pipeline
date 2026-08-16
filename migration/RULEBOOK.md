@@ -42,6 +42,11 @@ Status: DRAFT — update only through explicit design/review decisions.
 1. FastAPI endpoints are transport boundaries, not the home for all business logic.
 2. Define stable request/response/error contracts per feature.
 3. Keep host-platform compatibility logic separate from general application services.
+4. Every error response uses the single standard envelope (`code`, `message`, optional `detail`) — including request validation errors, framework errors, and uncaught exceptions. Do not invent a second error shape (ADR-0006).
+5. Error `code` values are stable, UPPER_SNAKE_CASE contract identifiers; the HTTP status↔code mapping is an explicit table, never derived from `HTTPStatus` phrase text, which is not stable across Python versions (ADR-0006).
+6. Business failures raise the transport-agnostic `AppError` from domain/service code; HTTP status is resolved at the API boundary from the code table unless the raise site sets an explicit override. Domain code never shapes HTTP responses.
+7. `detail` is a structured object/array or omitted entirely — never a bare scalar; a handler that would send a scalar detail drops it (ADR-0006).
+8. Cross-cutting API conventions (pagination, versioning, idempotency, auth/session shape) are decided per feature at first real need and recorded in that feature's design — not silently inherited from a previous feature.
 
 ## Database
 
@@ -57,3 +62,4 @@ Status: DRAFT — update only through explicit design/review decisions.
 3. Reviewer assumes behavior may have been omitted or invented.
 4. Verifier reports uncertainty instead of forcing PASS.
 5. Repeated defects trigger Rulebook/Skill/process review.
+6. Independent adversarial review depth scales with the slice's recorded lock-in risk: medium or higher requires independent review before commit; low-risk slices may skip it only when the rating and rationale are recorded in the queue artifact.

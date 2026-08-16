@@ -17,6 +17,12 @@ Status: DRAFT — update only through explicit design/review decisions.
 3. Existing tests are evidence, not complete truth.
 4. Characterization tests describe current behavior; they do not automatically endorse it as desired behavior.
 5. If parity requires normalization/tolerance, document the rule explicitly.
+6. Define comparison semantics per feature; do not default to byte-for-byte equality. Rules 7-10 are examples, not an exhaustive list — a case they do not cover still requires an explicit comparison rule.
+7. Compare business identifiers and money values exactly, by numeric value and declared scale, not by serialized string form.
+8. Allow floating-point tolerance for analytical results only when the legacy implementation already has numeric tolerance, and only at a tolerance the contract states explicitly and justifies against the legacy value.
+9. Normalize timestamps/timezones only when representation differs and semantics are unchanged.
+10. Use order-insensitive comparison only when order is not part of the behavior contract.
+11. Put every normalization rule in the behavior contract or Rulebook; do not hide it in a test helper.
 
 ## Platform / DLL
 

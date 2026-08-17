@@ -24,6 +24,10 @@ OpenCode
        +-- evidence/
 ```
 
+## DB execution safety boundary
+
+Repository-owned DB tooling must use the safety model defined in `docs/12-db-execution-safety-contract.md`: production is a read-only evidence source, while any mutation/DDL/stored-procedure side effect requires an explicitly typed test-write capability plus runtime attestation of the actual server/database identity. Profile names and SQL keyword matching are not authorization boundaries, and server-side least privilege remains the primary control. The contract is currently design-only; DB guard/connectors and bypass validation remain later implementation work under the design gate.
+
 ## Agent responsibilities
 
 Role names alone are not a routing contract. The canonical trigger, exclusion, output-ownership, skill tie-break, and escalation rules are defined in `docs/09-agent-skill-routing.md`.

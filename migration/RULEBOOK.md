@@ -61,6 +61,9 @@ Status: DRAFT — update only through explicit design/review decisions.
 8. Production DB objects are copied only when explicitly required by the feature/scenario dependency map. Do not materialize server-level objects, credentials/permissions, jobs, linked-server configuration, or unreviewed external/cross-database side effects.
 9. A production-derived fixture used as characterization/parity initial state must record source-consistency mode and provenance. A live read whose point-in-time consistency is unproven must not be represented as a reproducible initial-state oracle.
 10. DB materialization evidence records metadata, hashes, row counts, integrity results, and transform identifiers only; never commit production rows, connection strings, secrets, or sensitive parameter values as evidence.
+11. Production databases are read-only evidence sources for repository-owned migration/verification tooling. State-changing DB actions must pass the attested test-write boundary in `docs/12-db-execution-safety-contract.md`; wrapping a production mutation in a transaction/rollback does not make it safe.
+12. DB profile labels or SQL keyword matching are not write authorization. The guard consumes Issue #23's canonical profiles and grants write capability only to an attested `test + read-write` target whose actual server/database identity matches approved expected-target metadata.
+13. Database/server least privilege and environment network separation are primary controls. Repository code guards are defense in depth and must fail closed on unknown, ambiguous, or mismatched targets and must not expose a routine production-write bypass.
 
 ## Agent workflow
 

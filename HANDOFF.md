@@ -34,6 +34,29 @@ provenance semantics, and Issue #11 judge self-check requirements. No
 `.opencode/skills/*/SKILL.md` or migration application code was changed in
 this design pass.
 
+## 2026-08-18 — Issue #8 designer/implementer role-boundary design completed, implementation still gated
+
+Issue #8 was verified against the current agent definitions and reviewed
+adversarially as a design-only task. The direct issue is valid: both
+`migration-designer` and `implementer` currently use `edit: ask`, so the
+intended design/implementation split is not enforced for direct edits.
+
+The canonical design is now `docs/10-agent-role-boundary.md`. OpenCode's
+current permission documentation confirms path-granular per-agent edit rules,
+so no new OQ is required. The design uses deny-by-default edits with one
+`ask` exception for `migration/features/*/target-feature-design.md`, preserves
+`bash: deny`, and adds `task: deny` because the current global `task: allow`
+would otherwise let the designer proxy implementation through a write-capable
+subagent. Feature metadata, queue/state, open questions, and other process
+artifacts remain coordinator-owned; `implementer` intentionally keeps its
+broader `edit: ask` / `bash: ask` authority for approved implementation paths.
+
+No `.opencode/agents/*`, `opencode.json`, validator, CI, or command
+implementation was changed. The exact implementation steps and runtime
+permission checks are documented in `docs/10-agent-role-boundary.md` and
+remain blocked until the user explicitly releases the AGENTS.md rule 13 design
+gate.
+
 ## 2026-08-18 — Issue #5 command contract designed, implementation still gated
 
 Issue #5 (`.opencode/commands/*.md` deterministic execution contract) was

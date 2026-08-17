@@ -18,6 +18,30 @@ Use a hierarchy of evidence rather than a single source of truth.
 
 Grades communicate certainty, not correctness of the legacy behavior.
 
+## Claim provenance: observed vs inferred
+
+Evidence grade and claim provenance are separate dimensions. Every material legacy claim must be recorded exactly once and classified as either `observed` or `inferred`.
+
+- **observed**: a fact directly visible or captured in the cited evidence without adding business meaning. Examples include a source call to a named stored procedure, a schema column, a captured return value, or an observed callback.
+- **inferred**: a statement that requires interpretation beyond the direct evidence, including business purpose, intent, causal meaning, or an unobserved behavioral rule derived from source/schema/configuration.
+
+Rules:
+
+1. Do not put an observation and an inference in the same claim. Split them into separate bullets or rows.
+2. Record the observation first. Add an inference only when interpretation is required.
+3. An inferred claim must cite the observation/evidence it is derived from; unsupported inference becomes an unresolved question, not a fact.
+4. Do not duplicate the same statement in both forms. Provenance classifies one claim; it does not create two copies of it.
+5. `observed` does **not** mean evidence grade B. Grade B specifically means directly observed runtime behavior under the grading model above. A fact visible in source is observed provenance, but a business-behavior claim derived from source may still be grade C or D.
+6. Evidence grade must never be used as a substitute for provenance, and provenance must never be used as a shortcut for evidence grade.
+
+Artifact encoding is fixed as follows:
+
+- `docs/templates/behavior-contract.md`: every material rule carries a `Basis` value of `observed` or `inferred`; narrative claims use `[observed]` / `[inferred]` prefixes.
+- `docs/templates/evidence-record.md`: direct facts belong in `Observation`; derived interpretation belongs only in `Inference (optional)`.
+- `docs/templates/feature-card.md`: legacy-discovery claims use `[observed]` / `[inferred]` prefixes instead of duplicating sections.
+
+A reviewer must treat an unmarked material claim, a mixed observation/inference claim, or an inference presented as observation as a specification defect.
+
 ## Characterization strategy
 
 When possible, create a harness around an observable public boundary and capture:

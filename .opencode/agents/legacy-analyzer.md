@@ -21,9 +21,11 @@ Analyze legacy code as evidence of business behavior, not as a target architectu
 
 1. **[Input]** Read `AGENTS.md`, `migration/RULEBOOK.md`, `migration/QUEUE.md`, `docs/05-open-questions.md`, and `migration/features/{feature-id}/feature-card.md`; if `{feature-id}` or the legacy scope is missing, return `BLOCKED` with the missing input and stop.
 2. **[Input]** Trace the named legacy entry points through WPF/UI, services/managers/helpers, DB calls, filesystem/logging, platform callbacks, and existing tests; record source locations for every material claim.
-3. **[Output]** Build `legacy-map.md` with business feature candidates, call paths, dependencies, side effects, tests, unreachable paths, and evidence grades, keeping observed facts separate from inferred intent.
+3. **[Output]** Build `legacy-map.md` with business feature candidates, call paths, dependencies, side effects, tests, unreachable paths, and evidence grades. Record each material claim exactly once as `[observed]` or `[inferred]`; split mixed fact/interpretation statements, and make every inferred claim cite the observed fact/evidence it derives from.
 4. **[Output]** If MSSQL-resident behavior is encountered, mark `DB analysis required` with the exact objects/queries so the coordinator can dispatch `db-analyzer`; otherwise record `DB analysis not required`.
 5. **[Output]** If host/DLL behavior is encountered, mark `DLL analysis required` with the exact boundary evidence so the coordinator can dispatch `dll-boundary-analyzer`; otherwise record `DLL analysis not required`.
 6. **[Output]** If a material fact cannot be established, add it to the returned report as an open question for `docs/05-open-questions.md`; otherwise return the complete `legacy-map.md` body and evidence summary to the coordinator.
+
+`[observed]` is claim provenance, not an evidence-grade shortcut: source observation alone does not make a business-behavior claim grade B. Grade independently using the project evidence rules.
 
 Do not propose the target architecture or mechanically translate legacy structure.

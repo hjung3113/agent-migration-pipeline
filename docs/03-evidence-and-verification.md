@@ -80,6 +80,24 @@ Captures are stored against the standard record schema in `docs/templates/charac
 - Capture raw values first; normalization and comparison rules live in the behavior contract, never in the record.
 - The capture-item names are frozen: renaming an item forces re-conversion of every existing evidence record, because the schema is the shared base for evidence storage, judge composition (`migration/judge/ports.py` consumes these items), and reproduction procedures.
 
+### DB before/after evidence contract
+
+DB capture and diff for parity verification is governed by `docs/issue-22-db-snapshot-diff-contract.md`.
+
+The required model is intentionally narrower than a whole-database dump:
+
+1. define feature-scoped logical DB comparison subjects and reference the applicable `behavior-contract.md` `## Comparison semantics` row/Rulebook rule;
+2. capture the relevant records for `legacy/before`, `legacy/after`, `target/before`, and `target/after` using explicit projected columns, stable business/correlation keys, and hard row bounds;
+3. compute the raw structural delta for each side (`before -> after`);
+4. compare **legacy delta vs target delta** by default, not unrelated whole DB states;
+5. apply only the already-declared comparison semantics through the DB judge adapter — the snapshot/diff utility must not invent tolerance, normalization, ordering, or equality rules;
+6. keep raw DB row snapshots outside Git by default because they may contain sensitive company data; persist digests/counts/sanitized summaries or an approved secure-artifact reference in durable reports;
+7. treat unsafe/unproven read-only access, incompatible snapshot pairs, duplicate/missing keys, row-limit overflow, missing required captures, or missing/unsupported declared comparison semantics as a blocker rather than a partial PASS.
+
+A feature with no decision-relevant DB behavior does not require the `db-assertions` source. A feature that does require it may not substitute manual eyeballing of ad-hoc `SELECT` output for the defined DB evidence path.
+
+The DB source's mandatory negative control uses a staged synthetic snapshot/delta mutation at the comparator input. Do not mutate a shared database merely to prove the judge can detect a mismatch.
+
 ## Judge design under incomplete tests
 
 A verification judge may be composite:

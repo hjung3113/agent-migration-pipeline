@@ -1,5 +1,7 @@
 # Feature Artifacts
 
+> Design contract for issue #1. The validator, templates, and existing `synthetic-demo` fixture still require a separate implementation pass before this contract is mechanically enforced.
+
 Create one lowercase kebab-case directory per migration feature:
 
 ```text
@@ -32,7 +34,7 @@ Allowed stages:
 discovered | specified | designed | implementing | reviewing | verifying | done
 ```
 
-`blocked` is independent from `stage`; do not replace the lifecycle stage with a `blocked` status.
+`blocked` is independent from `stage`; do not replace the lifecycle stage with a `blocked` status. `stage: done` with `blocked: true` is invalid.
 
 The feature directory name and metadata `id` must match.
 

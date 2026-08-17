@@ -17,10 +17,13 @@ Turn legacy source into a feature/dependency inventory without treating source s
 3. Group paths by business purpose/feature rather than by file.
 4. Record inputs, outputs, persistent side effects, callbacks/events, errors, and configuration dependencies.
 5. Locate existing tests and note what they actually exercise.
-6. Mark ambiguous/dead/conditional behavior as uncertain.
-7. Produce or update feature cards using `docs/templates/feature-card.md`.
-8. Add material unknowns to `docs/05-open-questions.md`.
+6. For every material claim, distinguish a directly visible/captured fact from derived business intent: prefix it `[observed]` or `[inferred]`, never combine both in one bullet, and make inferred claims cite their supporting observation/evidence.
+7. Mark ambiguous/dead/conditional behavior as uncertain rather than converting it into an inferred fact.
+8. Produce or update feature cards using `docs/templates/feature-card.md`.
+9. Add material unknowns to `docs/05-open-questions.md`.
+
+`observed` is claim provenance, not an evidence grade. A source-visible fact does not become grade B unless runtime behavior was directly observed under the project grading rules.
 
 ## Done means
 
-A feature has a bounded legacy map and enough evidence to begin a behavior contract. No target code is written by this skill.
+A feature has a bounded legacy map, explicit provenance for material claims, and enough evidence to begin a behavior contract. No target code is written by this skill.

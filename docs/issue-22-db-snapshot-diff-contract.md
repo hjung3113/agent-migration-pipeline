@@ -49,6 +49,7 @@ The literal recommendation in Issue #22 is directionally correct but incomplete.
 7. **Raw DB rows are potentially sensitive.** This repository is Git-backed and may not be an approved store for production-derived row values. Raw snapshots therefore stay outside version control by default; durable reports store metadata, hashes, and sanitized summaries.
 8. **The judge self-check must challenge the DB comparator without mutating a database.** The safe negative-control boundary is a staged snapshot/delta artifact, not deliberate DB corruption.
 9. **Provisioning and observation are separate responsibilities.** This tool must not clone production, seed/reset test DBs, execute the business scenario, or write test data. Issues #19/#20/#21 own those boundaries.
+10. **A self-hashing JSON envelope must not be ambiguous.** Snapshot identity is computed over a canonical payload that excludes the digest field (or is stored as a sidecar), never over bytes containing their own hash.
 
 ## Canonical comparison model
 
@@ -105,7 +106,7 @@ When DB assertions are required for a feature, use one optional supporting artif
 migration/features/<feature-id>/db-comparison-plan.json
 ```
 
-This is not a seventh canonical singleton artifact and is not required for features with no decision-relevant DB comparison.
+This is not a seventh canonical singleton artifact and is not required for features with no decision-relevant DB comparison. `docs/08-feature-artifact-validation.md` already permits extra supporting files.
 
 The plan is version-controlled because it contains the reproducible **definition of what to capture**, not credentials or captured row values.
 
@@ -124,9 +125,8 @@ Minimum v1 shape:
       "columns": ["business_id", "status", "amount"],
       "required_parameters": ["business_id"],
       "max_rows": 1000,
-      "legacy_query": "SELECT ... AS business_id, ...",
-      "target_query": "SELECT ... AS business_id, ...",
-      "safe_to_render_values": false
+      "legacy_query": "SELECT ... AS business_id, ... WHERE id = ?",
+      "target_query": "SELECT ... AS business_id, ... WHERE id = ?"
     }
   ]
 }
@@ -139,9 +139,9 @@ Rules:
 3. Query results must expose exactly the declared logical column names after aliases are applied.
 4. `key_columns` are required for multi-row record sets. A one-row aggregate subject may use an empty key list only when the plan declares that one row is expected.
 5. Keys should represent business identity/correlation where possible. A physical surrogate key may be used only when the behavior contract makes it comparison-significant.
-6. Runtime parameter **values** are supplied from the scenario fixture/run and are not stored in the plan.
+6. Scenario-specific values must be parameters, not literals embedded in the version-controlled SQL. Runtime parameter values come from the scenario fixture/run and are not stored in the plan.
 7. `max_rows` is a hard safety bound. Exceeding it makes the subject BLOCKED; no snapshot may silently truncate and continue.
-8. `safe_to_render_values` defaults to `false`. Raw values are not written into Markdown/stdout unless a subject has been explicitly approved as sanitized/non-sensitive.
+8. V1 Markdown rendering never emits raw row values. This is deliberately simpler and safer than a per-subject `show values` flag. If a later policy permits sanitized values, that capability requires an explicit design change rather than an easy-to-flip repository flag.
 
 The initial implementation should use JSON and the Python standard library; adding YAML or an ORM is not justified by the current requirement.
 
@@ -180,12 +180,14 @@ Canonical snapshots are JSON with a versioned envelope. A snapshot records, at m
 - engine name;
 - non-secret environment/profile identity;
 - schema/build revision metadata needed for reproduction;
-- query digest and parameter-name set, but not credential material;
+- query digest and parameter-name set;
+- parameter-value digest plus the exact input-fixture reference, rather than raw sensitive parameter values in report metadata;
 - declared columns and key columns;
 - row count;
 - canonical typed row values;
-- capture timestamp;
-- content SHA-256.
+- capture timestamp.
+
+Snapshot identity is `sha256(canonical_payload_bytes)`, where `canonical_payload_bytes` excludes any `content_sha256` field. The digest may then be stored in an outer envelope or sidecar. The hashing rule must be fixed by tests so two implementations cannot choose different self-reference conventions.
 
 Canonical value encoding must preserve distinctions that ordinary JSON/CSV can lose. At minimum, the implementation must distinguish null, boolean, integer, decimal, floating-point, text, date/time, and binary values. Decimal values must not be coerced through binary floating point; binary values use an explicit encoding. Unsupported driver-specific types fail capture until an explicit canonical representation is defined.
 
@@ -198,6 +200,7 @@ A before/after pair is valid only when:
 - feature, subject, side, and run identity match;
 - query digest, logical columns, key columns, and capture-plan version match;
 - the same fixture/scenario identity is recorded;
+- the parameter-value digest is identical for the pair;
 - neither capture exceeded the row bound;
 - no duplicate logical key exists;
 - both captures completed successfully.
@@ -268,16 +271,15 @@ Git-tracked durable artifacts may contain:
 - row/change counts;
 - changed column names;
 - PASS/FAIL/BLOCKED reason;
-- explicitly sanitized values only when policy permits them;
 - an approved external secure-artifact reference if one exists.
 
 They must not contain unreviewed production-derived row values, DB credentials, or connection strings.
 
-Because the current repository does not define an approved secure raw-evidence store, Git is **not** treated as one by default. If long-term raw snapshot retention becomes required, that storage decision is a separate design item.
+Because the current repository does not define an approved secure raw-evidence store, Git is **not** treated as one by default. If long-term raw snapshot retention or sanitized-value publication becomes required, that storage/redaction decision is a separate design item.
 
 ## Verification report contract
 
-`migration/features/<feature-id>/verification.md` remains the canonical report. Its DB section should record one row per subject with:
+`migration/features/<feature-id>/verification.md` remains the canonical report. Its DB section records one row per subject with:
 
 - subject ID;
 - mode (`delta` or explicitly approved `state`);
@@ -288,7 +290,7 @@ Because the current repository does not define an approved secure raw-evidence s
 - semantic comparison result;
 - evidence grade / caveat.
 
-Markdown rendering from the tool is a convenience renderer for this structure, not an alternative source of truth. By default it omits raw values unless `safe_to_render_values` is explicitly true.
+Markdown rendering from the tool is a convenience renderer for this structure, not an alternative source of truth. V1 rendering contains metadata, counts, changed-column names, and digests only; it does not print raw row values.
 
 ## Future CLI boundary
 
@@ -312,7 +314,8 @@ Semantic legacy-vs-target PASS/FAIL belongs to the concrete DB judge adapter, no
 
 At minimum, later implementation tests should cover:
 
-- deterministic canonical JSON and digest for identical inputs;
+- deterministic canonical JSON and digest for identical payloads;
+- digest calculation excluding the digest field itself;
 - null versus empty string distinction;
 - decimal fidelity without float coercion;
 - binary/date/time encoding;
@@ -322,10 +325,10 @@ At minimum, later implementation tests should cover:
 - query/column mismatch rejected;
 - row-limit overflow BLOCKED with no partial success;
 - added/removed/updated delta calculation;
-- cross-run or query-digest mismatch rejected;
+- cross-run, query-digest, or parameter-digest mismatch rejected;
 - non-read-only query rejection;
 - read-only-profile failure before query execution;
-- raw values omitted from Markdown by default;
+- raw values omitted from Markdown;
 - a staged known-wrong DB mutation being detected by the same adapter used for parity.
 
 Driver-specific tests for MSSQL/PostgreSQL come only after the relevant connection/profile/bootstrap issues are implemented and a safe test environment exists.
@@ -358,10 +361,10 @@ The design is ready for a later implementation pass when:
 
 - a low-reasoning verifier has a deterministic capture -> delta -> semantic DB assertion flow;
 - whole-database comparison is not the default oracle;
-- DB queries are feature-scoped, explicitly projected, keyed, bounded, and reproducible;
+- DB queries are feature-scoped, explicitly projected, keyed, bounded, parameterized, and reproducible;
 - the tool can never require write capability to capture/diff evidence;
-- canonical snapshots preserve material value distinctions and cannot silently truncate;
+- canonical snapshots preserve material value distinctions, define unambiguous hashing, and cannot silently truncate;
 - comparison semantics remain owned by the behavior contract/Rulebook;
-- raw sensitive rows are not committed by default;
+- raw sensitive rows are not committed or rendered by default;
 - `DbAssertionPort` integration and the mandatory negative-control boundary are explicit;
 - MSSQL/PostgreSQL provisioning and write-safety responsibilities remain in their separate issues instead of being duplicated here.

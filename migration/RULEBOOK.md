@@ -73,6 +73,9 @@ Status: DRAFT — update only through explicit design/review decisions.
 8. Production DB objects are copied only when explicitly required by the feature/scenario dependency map. Do not materialize server-level objects, credentials/permissions, jobs, linked-server configuration, or unreviewed external/cross-database side effects.
 9. A production-derived fixture used as characterization/parity initial state must record source-consistency mode and provenance. A live read whose point-in-time consistency is unproven must not be represented as a reproducible initial-state oracle.
 10. DB materialization evidence records metadata, hashes, row counts, integrity results, and transform identifiers only; never commit production rows, connection strings, secrets, or sensitive parameter values as evidence.
+11. Live MSSQL inspection must use the bounded read-only evidence path in `docs/issue-18-mssql-readonly-inspection.md`: consume the canonical `mssql-prod-ro` profile, execute only fixed catalog `SELECT` queries, and expose no arbitrary SQL, DDL/DML, `EXEC`, application-row export, or legacy DB-object/job execution path.
+12. Metadata absence is evidence only when inspection completeness for the requested scope is established. Hidden rows, unavailable/encrypted definitions, missing `msdb` visibility, query failures, or uninspected categories remain explicit uncertainty and must not be converted into "object/logic does not exist".
+13. Raw operational DB definitions and job-step text are sensitive evidence. Do not automatically commit raw inspection captures into Git-tracked feature artifacts; persist reviewed migration-relevant facts, completeness status, hashes/source references, and only policy-approved minimal excerpts.
 
 ## Agent workflow
 

@@ -62,6 +62,14 @@ Routing decides **which** skill owns the next artifact; execution rules decide *
 
 Skills declare deterministic input/output paths and BLOCKED/PARTIAL branches. Read-only specialist agents return complete artifact bodies to `migration-coordinator`, which persists them at the canonical destination. Skills do not independently advance `migration/STATE.md`, `migration/QUEUE.md`, or feature lifecycle metadata.
 
+## Legacy MSSQL inspection boundary
+
+The DB-analysis role requires an explicit evidence-collection boundary rather than generic shell/SQL access. The canonical design is `docs/issue-18-mssql-readonly-inspection.md`.
+
+The intended Phase 1 tool is a bounded read-only catalog inspector at `scripts/db/mssql_inspect.py`. It consumes the shared `mssql-prod-ro` connection profile from `docs/12-db-connection-secrets-contract.md`, uses fixed catalog queries, produces versioned JSON plus optional Markdown from one normalized snapshot, and reports metadata/definition/job visibility separately so unavailable evidence cannot be mistaken for absence.
+
+Raw operational DB definitions are not normal Git artifacts. The inspector's raw capture stays in an approved local/secure evidence location; `migration/features/<feature-id>/db-dependency-report.md` persists only reviewed migration-relevant facts, completeness status, hashes/evidence references, and policy-approved minimal excerpts. This preserves the existing coordinator/read-only-specialist ownership model while avoiding a general SQL execution capability.
+
 ## Why OpenCode-native first
 
 OpenCode already provides project-local Agents, Skills, Commands, permissions, and `AGENTS.md`. Starting with these avoids stacking multiple orchestration frameworks that may duplicate context or conflict in agent routing.

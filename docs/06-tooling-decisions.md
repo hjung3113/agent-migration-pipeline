@@ -89,7 +89,21 @@ There is no production read-write profile. Missing/unknown configuration fails c
 
 The full design and Issue #18-#22 integration boundary are defined in `docs/12-db-connection-secrets-contract.md`. OQ-021 remains a separate open question about the legacy DLL's current configuration mechanism.
 
+### Alembic for target PostgreSQL schema history
+
+Adopt Alembic as the single durable migration history for target PostgreSQL. The repository already contains `target/backend/alembic.ini`, `target/backend/alembic/`, and the Alembic dependency, so treating selection as unresolved would contradict the current scaffold.
+
+Feature schema changes belong in `target/backend/alembic/versions/`; do not create a parallel raw-SQL migration history.
+
+The operational reset/seed/safety contract is defined in `docs/13-postgresql-test-db-and-schema-migration.md` and consumes the canonical `postgres-test-rw` profile plus the shared DB guard rather than inventing another connection/safety path.
+
 ## Defer
+
+### PostgreSQL disposable test DB bootstrap implementation
+
+Defer `scripts/db/pg_test_bootstrap.py` and a dedicated Docker/CI test target until the first real target feature changes PostgreSQL schema.
+
+This is an implementation deferral, not a design deferral. The required entry point, Alembic application path, seed policy, canonical `postgres-test-rw` profile, shared guard dependency, and verification handoff are fixed in `docs/13-postgresql-test-db-and-schema-migration.md` so the first DB-backed feature cannot bypass them.
 
 ### UI Inspector
 

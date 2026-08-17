@@ -35,6 +35,22 @@ Every behavior-contract rule with `Implementation impact = yes` must appear exac
 
 ## Persistence design
 
+## PostgreSQL schema migration / test DB plan
+
+- PostgreSQL schema change: yes | no
+- Schema delta / integrity semantics:
+- Alembic revision path / identity:
+- Clean test DB bootstrap required: yes | no
+- Bootstrap implementation path in this feature: N/A | `scripts/db/pg_test_bootstrap.py`
+- Connection profile: N/A | `postgres-test-rw`
+- Seed / fixture identity: none | <name/path>
+- Expected Alembic head:
+- Clean-state DB assertions / parity evidence:
+
+If `PostgreSQL schema change` is `yes`, every field above must be concrete according to `docs/13-postgresql-test-db-and-schema-migration.md`. If the bootstrap is required but does not yet exist, this design must explicitly include its implementation path or remain blocked. The connection path is the canonical `postgres-test-rw` profile plus shared DB guard; never authorize manual DDL, raw connection strings, or a general `DATABASE_URL` as reset substitutes.
+
+If `PostgreSQL schema change` is `no`, use `N/A` for migration-only fields rather than inventing a migration.
+
 ## Platform/DLL compatibility impact
 
 ## Error model

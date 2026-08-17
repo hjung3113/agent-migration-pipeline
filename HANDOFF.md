@@ -5,6 +5,33 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #11 judge self-check design merged; implementation still gated
+
+Issue #11 was verified against the current parity-verification skill and
+verifier agent and reviewed adversarially as a design-only task. The reported
+failure mode is real: both operational instructions still weaken judge
+self-validation with `where practical`.
+
+The literal fix of deleting those words was rejected as insufficient. The
+existing S-011 synthetic mutation test validates only the composite-judge
+skeleton; it does not validate future feature-specific adapters/manual
+procedures, required-source sets, comparison/normalization rules,
+fixture/schema/environment versions, or judge revisions.
+
+PR #43 therefore makes negative control mandatory for the effective judge
+configuration in `docs/03-evidence-and-verification.md`, adds auditable
+self-check fields to the canonical `docs/templates/verification.md`, and adds
+the verifier invariant to `migration/RULEBOOK.md`. A safe isolated known-wrong
+mutation must be material under declared comparison semantics and must be
+rejected by every declared detector. A missing safe control is `BLOCKED`, not a
+waiver. Prior self-check evidence is reusable only for an identical recorded
+configuration fingerprint.
+
+No `.opencode` skill/agent implementation was changed because AGENTS.md rule 13
+still gates implementation. The exact follow-up changes and regression tests
+are recorded on Issue #11. PR #43 merged as
+`85dbdac024043be7106cfd9983fb63d16651e865`.
+
 ## 2026-08-18 — Issue #14 durable-state protocol designed and merged; implementation still gated
 
 Issue #14 was re-checked against the actual `migration/STATE.md` and

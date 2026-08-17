@@ -57,9 +57,13 @@ Only include if business-significant. Use `NOT-APPLICABLE — <reason>` when the
 
 ## Comparison semantics
 
-Define exact/tolerant/normalized comparisons explicitly. Mark any claim about legacy comparison behavior with its provenance. Use `NOT-APPLICABLE — <reason>` when the section does not apply.
+Comparison semantics are specification, not test implementation. Every material comparison must be declared here or explicitly reference a reusable Rulebook rule. Feature-specific tolerance, normalization, ordering, representation, and equality rules belong here; test/helper code may implement only the declared rule and must not create or relax one. Use `NOT-APPLICABLE — <reason>` only when the feature has no material comparison semantics to verify.
 
-- [observed]
+| Basis | Subject | Mode | Rule / Rulebook ref | Evidence | Grade |
+|---|---|---|---|---|---|
+| observed | <subject> | <mode> | <explicit rule or Rulebook rule> | <evidence> | ? |
+
+`Mode` may be `exact`, `tolerant`, `normalized`, `order-sensitive`, `order-insensitive`, or a clearly defined composite. A Rulebook-backed row must cite the exact applicable rule. The template row is a placeholder, not a declared comparison rule. An absent, empty, or placeholder-only section is not implicit exact equality: if a material comparison is unresolved, add it to `Unresolved questions`; parity verification remains `BLOCKED` until the contract is updated.
 
 ## Known legacy bugs or questionable behavior
 

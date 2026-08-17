@@ -78,3 +78,9 @@ Chat history is not a source of truth. Durable state belongs in repository files
 - Feature artifacts: `migration/features/<feature>/`
 - Evidence: `migration/evidence/` or feature-local evidence
 - Project-level unknowns: `docs/05-open-questions.md`
+
+## Execution-contract ownership
+
+Artifact routing for reusable skills is defined centrally in `docs/10-skill-execution-contract.md`.
+
+Skills define reusable procedures, canonical destinations, and branch semantics. Agents provide role-specific reasoning; read-only specialists return complete artifact bodies to the migration coordinator for persistence. Commands own invocation arguments and precondition handling. The migration coordinator owns `STATE.md`, `QUEUE.md`, feature lifecycle transitions, and persistence of read-only specialist results. Agent/command/skill files must consume the same routing vocabulary instead of redefining independent output paths.

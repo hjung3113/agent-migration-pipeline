@@ -5,6 +5,33 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #14 durable state protocol designed, implementation still gated
+
+Issue #14 (`migration/STATE.md` / `migration/QUEUE.md` machine-readable state
+and field-level update semantics) was reviewed adversarially as a design-only
+task. Adding enum legends alone was rejected as insufficient because it would
+still leave mixed queue schemas, actionable-vs-blocked ambiguity, no resumable
+`IN_PROGRESS` state, no source-of-truth precedence, and no way to detect a
+partially written feature/queue/project-state update.
+
+The canonical design is `docs/11-durable-state-protocol.md`, linked from
+`docs/02-migration-pipeline.md`. The design separates feature lifecycle,
+queue work-item state, unresolved questions, and project summary authority;
+adds explicit STATE/QUEUE schemas and enums; uses one canonical queue table;
+defines legal transitions and blocker/dependency invariants; and introduces a
+shared integer `generation` so stale/concurrent/partial writes can be detected.
+Queue is the work-item authority and STATE is a derived project summary, so one
+blocked feature does not automatically make the project blocked while other
+current-gate work is actionable.
+
+Issue #5's `docs/10-command-execution-contract.md` remains authoritative for
+command arguments/inputs/outputs, but its provisional current queue vocabulary
+is superseded by the later #14 durable-state semantics when implementation is
+approved. No `migration/STATE.md`, `migration/QUEUE.md`, `.opencode` command or
+coordinator implementation, validator, or CI code was changed in this pass.
+Those changes remain gated by AGENTS.md rule 13 and should be implemented as one
+coherent state-contract pass rather than enum-only local edits.
+
 ## 2026-08-18 — Issue #5 command contract designed, implementation still gated
 
 Issue #5 (`.opencode/commands/*.md` deterministic execution contract) was

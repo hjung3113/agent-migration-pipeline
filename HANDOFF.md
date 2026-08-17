@@ -9,8 +9,8 @@ Last updated: 2026-08-18
 
 Issue #6 (skill procedures lack deterministic input/output paths and branch
 conditions) was adversarially reviewed as a design-only task against the
-current `main`, including the merged issue #4 agent procedure work and issue
-#9 grade-transition design.
+current `main`, including the merged issue #4 agent procedure work, issue #9
+grade-transition design, and issue #10 provenance contract.
 
 The canonical design is now `docs/10-skill-execution-contract.md`. The key
 decision is not to copy independent path rules into nine skills. Instead,
@@ -28,10 +28,30 @@ The design also prevents implementation-time discoveries from silently
 rewriting an approved target design: a material deviation reopens the design
 gate. DLL-boundary outputs are routed deterministically for both feature-local
 and project-wide scopes. Evidence grading delegates transition mechanics to
-`docs/09-evidence-grade-transition-control.md`; verification judge self-check
-remains governed by issue #11.
+`docs/09-evidence-grade-transition-control.md`; observed/inferred provenance
+remains independent from grade; verification judge self-check remains governed
+by issue #11.
 
 No `.opencode/skills/*/SKILL.md` or application code was changed in this pass.
+
+## 2026-08-18 — Issue #10 observed/inferred provenance design completed
+
+Issue #10 was reviewed adversarially as a design/documentation defect. The
+literal fix of adding duplicate Observed/Inferred sections everywhere was
+rejected because low-reasoning agents can duplicate the same claim across
+both sections and because provenance can be confused with evidence grade.
+
+The design now treats provenance and confidence as separate dimensions:
+each material legacy claim is recorded once as `observed` or `inferred`;
+mixed claims must be split; inferred claims must cite their supporting
+observation/evidence; a source-visible fact is not automatically grade B.
+The canonical rule is in `docs/03-evidence-and-verification.md` and is
+encoded in `behavior-contract.md`, `evidence-record.md`, and
+`feature-card.md`, with matching discovery/spec/grading agent guidance and
+adversarial-review checks.
+
+No runtime migration implementation was added. This change only fixes the
+analysis/specification contract for issue #10.
 
 ## 2026-08-18 — Issue #9 evidence-grade transition design completed, implementation still gated
 

@@ -5,6 +5,33 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #6 skill execution-contract design completed, implementation still gated
+
+Issue #6 was verified against the current skills and reviewed adversarially as
+a design-only task. The literal recommendation to add paths plus a generic
+if-then to each skill is insufficient because routing, write permission,
+persistence ownership, and lifecycle mutation are separate concerns.
+
+The canonical design is now `docs/10-skill-execution-contract.md`, linked from
+`docs/01-architecture.md`. `docs/09-agent-skill-routing.md` remains authoritative
+for which role/skill owns the next artifact; the Issue #6 contract defines the
+selected skill's exact durable inputs/outputs, feature-vs-project scope,
+BLOCKED/PARTIAL/conflict branches, and read-only persistence handoff.
+
+Skills do not independently advance `migration/STATE.md`, `migration/QUEUE.md`,
+or feature lifecycle metadata. Read-only specialists return complete artifact
+bodies to `migration-coordinator` for canonical persistence. Material
+implementation-time design deviations reopen the design gate instead of
+silently rewriting approved design. The later implementation must preserve
+Issue #5 command ownership, Issue #7 routing, Issue #8 write permissions,
+Issue #9 grade transitions, Issue #10 provenance, and Issue #11 judge
+self-check semantics.
+
+No `.opencode/skills/*/SKILL.md` or migration application code was changed in
+this design pass. The design itself was merged through PR #36; this handoff
+entry was applied afterward on `main` because concurrent sessions were editing
+this single shared file and caused PR conflicts.
+
 ## 2026-08-18 — Issue #2 artifact-schema design completed, implementation still gated
 
 Issue #2 (enum/ID/reference validation) was reviewed adversarially as a

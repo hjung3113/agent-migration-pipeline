@@ -23,6 +23,7 @@ Status: DRAFT — update only through explicit design/review decisions.
 9. Normalize timestamps/timezones only when representation differs and semantics are unchanged.
 10. Use order-insensitive comparison only when order is not part of the behavior contract.
 11. Comparison semantics are specification, not test implementation. Every feature-specific exact/tolerance/normalization/order rule must be declared in that feature's `behavior-contract.md` `## Comparison semantics`; a reusable cross-feature rule may live in this Rulebook only when the feature contract cites the applicable Rulebook rule explicitly. A test/helper may implement a declared rule, but must not invent, relax, or silently override comparison semantics. A missing, placeholder-only, empty, ambiguous, or helper-only comparison rule blocks parity verification rather than defaulting to equality or permissive normalization.
+12. Sanitizing or masking a production-derived fixture is fixture preparation, not a hidden comparison normalization. Record the transformation provenance; if it changes a behaviorally relevant property, that fixture cannot support parity for that rule unless the approved behavior contract establishes that the changed representation is irrelevant.
 
 ## Platform / DLL
 
@@ -54,6 +55,12 @@ Status: DRAFT — update only through explicit design/review decisions.
 2. Inventory stored procedures, triggers, functions, views, jobs, constraints, defaults, collations, and transaction behavior.
 3. Business logic embedded in DB objects must be explicitly relocated or intentionally retained/reimplemented.
 4. Preserve data integrity semantics before optimizing schema design.
+5. Production-derived MSSQL test data is prepared by one-way materialization into an isolated test database; do not introduce continuous/bidirectional sync or an implicit production write path.
+6. Production access for materialization requires a DB-server-enforced read-only credential. Connection naming and application guards are additional defenses, not substitutes for server-side permissions.
+7. Data copy is fail-closed: schema-only is the default, and every copied table, row-selection rule, selected column, and direct-copy/transformation decision must be explicit. Wildcards, unclassified/new columns, and invented sampling rules block the run.
+8. Production DB objects are copied only when explicitly required by the feature/scenario dependency map. Do not materialize server-level objects, credentials/permissions, jobs, linked-server configuration, or unreviewed external/cross-database side effects.
+9. A production-derived fixture used as characterization/parity initial state must record source-consistency mode and provenance. A live read whose point-in-time consistency is unproven must not be represented as a reproducible initial-state oracle.
+10. DB materialization evidence records metadata, hashes, row counts, integrity results, and transform identifiers only; never commit production rows, connection strings, secrets, or sensitive parameter values as evidence.
 
 ## Agent workflow
 

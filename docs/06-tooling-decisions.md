@@ -18,6 +18,20 @@ Project-specific migration skills remain authoritative where they differ from ge
 
 Pinned to `v6.3.0` (see resolved OQ-024 in `docs/05-open-questions.md`) rather than tracking the default branch, for reproducibility.
 
+### DB connection and secret injection contract
+
+Migration DB tooling uses logical connection profiles backed only by fixed process-environment variables. DB scripts accept profile names, never raw connection strings, passwords, arbitrary environment-variable names, or secret-bearing config-file paths.
+
+The initial profiles are deliberately limited to:
+
+- `mssql-prod-ro` -> `MSSQL_PROD_RO_CONN`
+- `mssql-test-rw` -> `MSSQL_TEST_RW_CONN`
+- `postgres-test-rw` -> `PG_TEST_RW_CONN`
+
+There is no production read-write profile. Missing/unknown configuration fails closed with no fallback. Connection values must not appear in logs, errors, evidence, or committed files.
+
+The full design and Issue #18-#22 integration boundary are defined in `docs/12-db-connection-secrets-contract.md`. OQ-021 remains a separate open question about the legacy DLL's current configuration mechanism.
+
 ## Defer
 
 ### UI Inspector

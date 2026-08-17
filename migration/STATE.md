@@ -1,8 +1,21 @@
 # Migration State
 
 - Phase: 0 — Environment scaffold
-- Status: ACTIVE — blocked on legacy repository access (Q-001/Q-002/Q-003)
-- Last updated: 2026-08-17
+- Status: BLOCKED — G0: G0.1, G0.2, G0.3
+- Last updated: 2026-08-18
+
+## Active phase gate
+
+- Gate: G0 — FOUNDATION_READY
+- Result: BLOCKED
+- Failed criteria: G0.1, G0.2, G0.3
+- Evidence:
+  - legacy repository access required for the real DLL-boundary report is not yet available;
+  - `migration/evidence/dll-boundary-report.md` does not yet contain the required analyzed host-callable entry points;
+  - `migration/evidence/observable-output-survey.md` does not yet contain a parity-usable observable output;
+  - `docs/05-open-questions.md` still has OQ-001 and OQ-010 as `OPEN`.
+
+The canonical criterion definitions and failure protocol are in `docs/02-migration-pipeline.md`.
 
 ## Completed
 
@@ -23,16 +36,11 @@
   is runnable end-to-end. See `migration/QUEUE.md` for per-slice detail and
   review notes.
 
-## Next gate
+## Next gate work
 
-Legacy source access is required to make further progress: Q-001/Q-002/Q-003
-(DLL boundary inspection, test/CI inventory, observable-output survey) and
-downstream Q-004..Q-010 all depend on it. Nothing further in
-`migration/SLICES-DRAFT.md` is reachable without it. Before broad migration
-work, inspect the actual legacy repository and resolve enough P0 questions
-to define:
+Only G0-enabling inspection is allowed before broad feature discovery:
 
-1. the DLL public boundary;
-2. available observable outputs;
-3. the minimum viable characterization/parity judge (framework now exists —
-   `migration/judge/` — concrete adapters are what's blocked).
+1. obtain legacy source access and create `migration/evidence/dll-boundary-report.md` from `docs/templates/dll-boundary-report.md`;
+2. create `migration/evidence/observable-output-survey.md` from `docs/templates/observable-output-survey.md`;
+3. resolve OQ-001 and OQ-010 from evidence;
+4. re-evaluate G0.1-G0.3 and advance to Phase 1 only if all are `PASS`.

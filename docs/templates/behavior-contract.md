@@ -1,5 +1,8 @@
 # Behavior Contract: <feature>
 
+- Status: draft | ready | blocked
+- Legacy source/revision:
+
 > Claim provenance rule
 >
 > - Record each material legacy claim exactly once.
@@ -10,56 +13,76 @@
 
 ## Scenario
 
-- [observed] 
+- [observed]
 
 ## Inputs
 
-- [observed] 
+- [observed]
 
 ## Preconditions
 
-- [observed] 
+- [observed]
 
 ## Business rules
 
-| Rule ID | Basis | Rule | Evidence | Grade |
-|---|---|---|---|---|
-| BR-001 | observed | | | ? |
+| Rule ID | Basis | Rule | Implementation impact | Evidence | Grade |
+|---|---|---|---|---|---|
+| BR-001 | observed | | yes | | ? |
 
 `Basis` must be `observed` or `inferred`. An inferred rule must cite the supporting evidence/observation. If the inference is materially unsupported, move it to `Unresolved questions` instead of presenting it as a rule.
 
+`Implementation impact` must be literal `yes` or `no`; it controls G2 evidence requirements and must not be inferred from prose during gate evaluation.
+
 ## Outputs
 
-- [observed] 
+- [observed]
 
 ## Database side effects
 
-- [observed] 
+- [observed]
 
 ## Files/logs/events/callbacks
 
-- [observed] 
+- [observed]
 
 ## Error/warning behavior
 
-- [observed] 
+- [observed]
 
 ## Ordering/timing requirements
 
-Only include if business-significant.
+Only include if business-significant. Use `NOT-APPLICABLE — <reason>` when the section does not apply.
 
-- [observed] 
+- [observed]
 
 ## Comparison semantics
 
-Define exact/tolerant/normalized comparisons explicitly. Mark any claim about legacy comparison behavior with its provenance.
+Define exact/tolerant/normalized comparisons explicitly. Mark any claim about legacy comparison behavior with its provenance. Use `NOT-APPLICABLE — <reason>` when the section does not apply.
 
-- [observed] 
+- [observed]
 
 ## Known legacy bugs or questionable behavior
 
-- [observed] 
+- [observed]
 
 ## Unresolved questions
 
-- 
+| Question / OQ ID | Blocks design? | Status | Evidence / resolution |
+|---|---|---|---|
+| | yes | OPEN | |
+
+`Blocks design?` must be literal `yes` or `no`. Status should match the linked project OQ when one exists. Unsupported inferred material behavior belongs here rather than being upgraded into a business rule.
+
+## Gate G2 — SPEC_READY
+
+- Result: PENDING | PASS | BLOCKED
+- Evaluated at:
+- Evaluated by:
+
+| Criterion ID | Result | Evidence reference |
+|---|---|---|
+| G2.1 | PENDING | |
+| G2.2 | PENDING | |
+| G2.3 | PENDING | |
+
+The criterion definitions and pass rule are canonical in `docs/02-migration-pipeline.md`. Do not copy or reinterpret them here.

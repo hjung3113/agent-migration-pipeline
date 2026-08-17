@@ -52,7 +52,7 @@ Keep OQ-014 `OPEN` until evidence identifies an actually available, approved san
 
 | ID | Status | Question | Why it matters |
 |---|---|---|---|
-| OQ-024 | CONFIRMED | Should Superpowers be pinned to a fixed tag after initial evaluation? | Reproducibility vs rapid updates. |
+| OQ-024 | CONFIRMED | How should Superpowers be pinned so sessions remain reproducible? | Prevents unreviewed upstream behavior changes between clones/sessions. |
 | OQ-025 | DEFERRED | Does the React phase need UI Inspector MCP? | Add only when visual/component inspection provides real value. |
 | OQ-026 | DEFERRED | Is native OpenCode subagent orchestration insufficient at scale? | Only then evaluate a larger orchestration layer. |
 | OQ-027 | DEFERRED | Is Git-backed documentation insufficient for long-term agent memory? | Only then add an external memory system. |
@@ -61,11 +61,25 @@ Keep OQ-014 `OPEN` until evidence identifies an actually available, approved san
 
 ### OQ-024 — Superpowers pinning
 
-**Status:** CONFIRMED (2026-08-16)
+**Status:** CONFIRMED (initial decision 2026-08-16; adversarial design review 2026-08-18)
 
-Pin `superpowers` to a fixed tag (`v6.3.0`, latest at time of decision) in `opencode.json` instead of tracking the plugin's default branch.
+The reproducibility boundary should be an immutable full commit SHA. A branch or `HEAD` reference is forbidden. A release tag may be recorded as a human-readable version label, but it is not the executable identity because tags can be moved.
 
-**Evidence:** `git ls-remote --tags https://github.com/obra/superpowers.git` — reproducibility outweighs picking up unreviewed upstream changes automatically for a project-local, disk-backed pipeline. Bump the tag explicitly and re-run `scripts/validate_scaffold.py` when upgrading.
+Verified identity for the currently selected release:
+
+- upstream release: `v6.3.0`
+- annotated tag object: `86babb696875227929e85420f287d6309374b93f`
+- resolved commit: `b36e0829c6d0140e93cfef2ca599b1b07d4a7797`
+
+**Current implementation:** `opencode.json` remains pinned to tag `v6.3.0`. That removes the original floating-branch behavior but does not yet satisfy the stronger immutable-SHA design.
+
+**Approved implementation target:** change the plugin ref to `superpowers@git+https://github.com/obra/superpowers.git#b36e0829c6d0140e93cfef2ca599b1b07d4a7797` and add a scaffold validation rule that rejects Superpowers refs without a full 40-character commit SHA.
+
+**Evidence:** GitHub's upstream annotated tag `v6.3.0` resolves to commit `b36e0829c6d0140e93cfef2ca599b1b07d4a7797`. The adversarial review also found that the existing `scripts/validate_scaffold.py` checks the OpenCode schema but does not enforce any Superpowers pinning invariant.
+
+**Design-gate status:** implementation is intentionally pending. Issue #17 is Medium and `AGENTS.md` requires explicit user authorization after design approval before implementation in a separate pass.
+
+**Upgrade rule:** choose a new upstream release deliberately, resolve it to an exact commit SHA, review the upstream behavior change, then update the executable ref and documentation together and run scaffold validation. Automatic/floating upgrades are not allowed.
 
 ## Update rule
 

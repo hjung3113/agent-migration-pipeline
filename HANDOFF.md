@@ -5,6 +5,33 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #14 durable-state protocol designed and merged; implementation still gated
+
+Issue #14 was re-checked against the actual `migration/STATE.md` and
+`migration/QUEUE.md`, the latest phase-gate, command, STOP, artifact-schema,
+and artifact-naming designs, then reviewed adversarially as a design-only task.
+The literal enum-only fix was rejected because it would still leave two queue
+schemas, ambiguous actionable-vs-blocked work, no crash-resumable
+`IN_PROGRESS`, gate/project `BLOCKED` conflation, and no way to detect a stale
+or partially written cross-file state update.
+
+The canonical design is `docs/11-durable-state-protocol.md`, merged through PR
+#41. It defines machine-readable STATE/QUEUE schemas, one canonical queue table,
+`TODO | IN_PROGRESS | BLOCKED | DONE`, explicit blocker/dependency references,
+legal transitions, source-of-truth precedence, shared transaction `generation`,
+ordered writes, and deterministic partial-write recovery. A key correction is
+that phase `gate_result` and operational project `status` are separate: a gate
+may be `BLOCKED` while the project remains `ACTIVE` because gate-enabling work
+is still actionable. `docs/02-migration-pipeline.md` and
+`docs/10-command-execution-contract.md` were reconciled to that rule.
+
+Issue #13 remains authoritative for STOP cause/payload/OQ deduplication/routing;
+Issue #14 owns the exact QUEUE/STATE fields, transitions, and transaction used
+to persist those results. No `migration/STATE.md`, `migration/QUEUE.md`,
+`.opencode` command/coordinator, validator, or CI implementation was changed.
+The concrete future implementation steps are recorded on Issue #14 and remain
+gated by AGENTS.md rule 13.
+
 ## 2026-08-18 — Issue #13 STOP contract designed and merged; implementation still gated
 
 Issue #13 was checked against the actual eight agent definitions, the current

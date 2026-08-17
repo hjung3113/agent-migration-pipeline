@@ -93,7 +93,42 @@ existing tests
 + selected manual evidence
 ```
 
-Before trusting a parity harness, deliberately introduce a known wrong result and confirm the harness fails. A judge that cannot catch a controlled mismatch is not a useful exit condition. This self-test was performed in S-011 against a synthetic feature (`migration/features/synthetic-demo/`, `migration/judge/tests/test_mutation_self_test.py`) and passed: the injected mismatch graded FAIL while the honest baseline graded PARTIAL. A valid self-test must also confirm that every source capable of catching the mutation actually flips to FAIL — a self-test that passes while a catching port silently always-PASSes is vacuous, not evidence.
+### Judge self-check gate — mandatory negative control
+
+A feature verdict and trust in the judge are separate questions. No parity result is valid until the **effective judge configuration used for that verification** has a passing negative control.
+
+The effective configuration includes, at minimum:
+
+- the required evidence-source set for the scenario;
+- the concrete adapters or manual procedures that produce those source results;
+- the behavior-contract comparison and normalization rules used by those adapters/procedures;
+- the fixture/schema/environment versions that affect comparison behavior; and
+- the judge/harness implementation revision.
+
+Before trusting that configuration, deliberately inject one or more known-wrong results and prove that the configuration rejects them. The control must be material under the behavior contract; a cosmetic mutation that no business rule should detect is not a valid self-check.
+
+Negative-control rules:
+
+1. **Use a safe isolated injection boundary.** Prefer a fixture, adapter input, comparator input, synthetic response, or staged manual artifact. Do not mutate shared production data or a shared legacy/target environment merely to test the judge.
+2. **Declare expected detectors before execution.** For each controlled mismatch, list every decision-relevant source/procedure that is expected to detect it.
+3. **Prove the detectors actually reject the mismatch.** Every declared detector must return FAIL or explicitly reject the staged mismatch. A detector that still reports PASS, silently normalizes the mismatch away, or was not actually exercised makes the self-check FAIL.
+4. **Guard against a no-op mutation.** Record the baseline and mutated value/state and prove they differ under the contract's comparison semantics.
+5. **Cover the decision-relevant judge, not just one convenient port.** One control may cover multiple sources; multiple controls are required when necessary so that every required source/procedure capable of contributing a passing comparison is negatively controlled.
+6. **There is no `where practical` waiver.** If a required source/procedure cannot be safely negative-controlled after checking isolated fixture/comparator/manual-artifact boundaries, the self-check is BLOCKED. This is an explicit inability to validate the exit condition, not permission to skip it.
+
+Self-check status is exactly one of:
+
+- **PASS** — the required controls were executed successfully, or a previously executed self-check was validly reused under the reuse rule below;
+- **FAIL** — a control ran but the judge accepted a known-wrong result, an expected detector did not reject it, or the mutation was not actually material;
+- **BLOCKED** — no safe isolated control can be executed for part of the effective configuration, or required self-check evidence/configuration identity is missing.
+
+If judge self-check status is **FAIL** or **BLOCKED**, the feature's overall verification result is **BLOCKED**, regardless of the nominal parity results. The report may still list observed mismatches or candidate feature failures, but it may not claim PASS, FAIL, or PARTIAL as a trusted parity verdict because the exit condition itself is unvalidated.
+
+A previous self-check may be reused only when the report records an identical effective-configuration fingerprint and cites the prior self-check evidence. Any change to required sources, concrete adapters/manual procedure, comparison/normalization rules, relevant fixture/schema/environment version, or judge implementation invalidates reuse and requires a new control.
+
+The S-011 synthetic self-test (`migration/features/synthetic-demo/`, `migration/judge/tests/test_mutation_self_test.py`) proves only that the current composite-judge skeleton can reject its synthetic controlled mismatch. It does **not** validate future real adapters, feature-specific comparison rules, or different required-source combinations; those configurations still require their own self-check or valid fingerprint-based reuse.
+
+Every verification artifact must use `docs/templates/verification.md` to record self-check status, effective configuration/fingerprint, control injection, expected detectors, actual detector results, evidence/reuse reference, and any blocker. A self-check that cannot be audited from the report is not a passing self-check.
 
 ### Verdict combination semantics (fixed in `migration/judge`, S-001)
 
@@ -119,7 +154,7 @@ Do not default to byte-for-byte equality for every output. Define comparison sem
 
 - exact equality for business identifiers and money values
 - tolerance for floating-point analytical results if the legacy implementation already has numeric tolerance
-- normalized timestamps/timezones when representation changes but semantics do not
+- normalized timestamps/timezones when representation changes but semantics are unchanged
 - order-insensitive comparison only when order is not part of the contract
 
 All normalization rules belong in the behavior contract or Rulebook, not hidden in test helpers.
@@ -133,5 +168,7 @@ Manual confirmation is acceptable evidence when automation is not currently poss
 - what was observed
 - screenshots/logs/DB rows if permitted
 - remaining uncertainty
+
+Manual evidence is not exempt from the judge self-check gate. Its negative control may use a deliberately mismatched staged artifact or comparison pair; if the manual procedure cannot be safely challenged with a known mismatch, verification remains BLOCKED rather than treating "manual" as a waiver.
 
 Do not convert manual observation into an undocumented permanent assumption.

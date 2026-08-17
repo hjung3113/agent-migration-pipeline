@@ -31,6 +31,12 @@ Status values: `OPEN`, `CONFIRMED`, `NOT-APPLICABLE`, `DEFERRED`.
 | OQ-016 | OPEN | Which workflows are business-critical and should be migrated first? | Needed to prioritize feature queue. |
 | OQ-017 | OPEN | Are there known legacy bugs that must not be preserved? | Separates parity from desired behavior. |
 
+### OQ-014 — availability is a fact, not a tooling decision
+
+Issue #19 defines how an approved production-derived MSSQL test state may eventually be materialized safely (`docs/issue-19-mssql-test-materialization.md`), but tool design or implementation does not by itself answer OQ-014.
+
+Keep OQ-014 `OPEN` until evidence identifies an actually available, approved sanitized dataset/fixture or a successfully materialized reusable fixture with recorded provenance. Do not mark it `CONFIRMED` merely because a script exists.
+
 ## P2 — Deployment / security / operations
 
 | ID | Status | Question | Why it matters |

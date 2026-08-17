@@ -5,6 +5,35 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #2 artifact-schema design completed, implementation still gated
+
+Issue #2 (enum/ID/reference validation) was reviewed adversarially as a
+design-only task. The literal proposal to parse body `Status:` values conflicts
+with Issue #1, where `feature-card.md` frontmatter is the sole machine-readable
+lifecycle source, so A-2 is defined as a schema layer on top of A-1 rather than
+a second lifecycle parser.
+
+The canonical design is `docs/issue-2-artifact-schema-validation.md`. Key
+decisions: enums are schema-specific rather than one global `Grade` enum;
+Issue #10 provenance values are exactly `observed | inferred`; `BR-###` IDs are
+feature-local while `OQ-###` IDs are repository-global; references are checked
+only in declared machine-readable fields rather than arbitrary Markdown;
+templates are schema examples, not live artifact instances; and static schema
+violations are aggregated with file/line diagnostics. Issue #9 keeps
+revision-aware evidence-grade transition logic separate while sharing parsing
+infrastructure where useful.
+
+The review also found a concrete current-data inconsistency:
+`migration/features/synthetic-demo/characterization-record.md` pairs
+`none observed` with `Grade: N/A` in several items. `Grade: N/A` is now
+reserved for genuinely inapplicable `Value: N/A` items; observed absence still
+requires an evidence grade. This must be normalized during implementation, not
+exempted.
+
+No validator/template/sample implementation was changed. Implementation remains
+a separate pass after explicit user authorization under AGENTS.md rule 13 and
+must first perform the A-1/A-2 repository normalization described in the design.
+
 ## 2026-08-18 — Issue #8 designer/implementer role-boundary design completed, implementation still gated
 
 Issue #8 was verified against the current agent definitions and reviewed

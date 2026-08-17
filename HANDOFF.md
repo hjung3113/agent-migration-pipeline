@@ -5,6 +5,37 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #20 DB execution safety design merged; implementation still gated
+
+Issue #20 was checked against the actual DB analyzer/skill, current DB tooling
+plans, and the already merged Issue #18/#19/#22/#23 contracts, then reviewed
+adversarially as a design-only task. The production-write blast-radius risk is
+real, but the issue's literal keyword/profile-name guard is not a sufficient
+authorization boundary.
+
+The canonical design is `docs/12-db-execution-safety-contract.md`, merged
+through PR #49 as `2e6f32c805881d6c1549bedabfafa80e193ef1ca`. It consumes
+Issue #23's canonical `mssql-prod-ro`, `mssql-test-rw`, and
+`postgres-test-rw` profiles rather than inventing another connection contract.
+Production is a read-only evidence source; write capability requires canonical
+`test + read-write` metadata plus runtime attestation that the actual
+engine/server/database exactly matches the approved test target. Mutation, DDL,
+stored-procedure execution, unknown/mixed batches, and rollback-wrapped
+production mutations fail closed before driver execution.
+
+`docs/01-architecture.md` and `migration/RULEBOOK.md` were aligned with that
+boundary. Server-enforced production read-only permissions and network
+separation remain the primary controls; code guarding is defense in depth.
+Normal migration tooling must not expose raw writable connections, hazardous
+audit records must redact secrets/parameters/rows, and later CI/static checks
+must detect direct driver/connection bypasses outside the approved migration DB
+boundary.
+
+No `scripts/db/db_guard.py`, DB connector, credentials, profile implementation,
+or runtime DB code was added because AGENTS.md rule 13 still gates
+implementation. The concrete follow-up requirements were recorded on Issue #20,
+which remains open until implementation is explicitly authorized and completed.
+
 ## 2026-08-18 — Issue #18 MSSQL read-only inspection design merged; implementation still gated
 
 Issue #18 was verified against the current DB analyzer/skill, DB dependency
@@ -437,15 +468,3 @@ this session made.
   (observable-output survey) — `migration/QUEUE.md`
 - All of P0 `docs/05-open-questions.md` (OQ-001..OQ-010) — still OPEN
 - These need legacy source access regardless of the redo's outcome
-
-## Process notes for next session
-
-- Follow AGENTS.md rule 13 literally: design artifact first, stop, wait for
-  explicit "design done, start building" from the user, per slice.
-- When dispatching any GLM work, be explicit in the prompt about whether it
-  is a design-only task (docs, no code) or an implementation task — do not
-  let a single prompt do both, that's exactly the failure mode from this
-  session.
-- `opencode run -m zai-coding-plan/glm-5.3 --variant low|high --format json
-  --auto "<prompt>"` times out around 280s on multi-file tasks; re-run with
-  `--continue` to resume the same session rather than starting over.

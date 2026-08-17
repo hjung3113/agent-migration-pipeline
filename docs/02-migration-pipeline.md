@@ -28,7 +28,15 @@ The seven `.opencode/commands/migration-*.md` files are phase entrypoints, not i
 
 Command implementations must not infer a queue row or feature from chat context, must not advance a phase when a required artifact/gate is missing, and must keep feature-local blocking separate from project-level blocking. Canonical artifact paths come from the feature-artifact contract and the merged issue #4 agent contracts rather than being chosen independently inside each command.
 
-Issue #5 command implementation remains gated on design approval and must be reconciled with issue #1 feature metadata, issue #3 phase-gate checklists, and issue #15's remaining artifact/template filename mismatch.
+Issue #5 command implementation remains gated on design approval and must be reconciled with issue #1 feature metadata, issue #3 phase-gate checklists, issue #14 durable-state semantics, and issue #15's remaining artifact/template filename mismatch.
+
+## Durable state contract
+
+`migration/STATE.md` and `migration/QUEUE.md` are the cross-session durable state interface. Their machine-readable schemas, status enums, legal transitions, source-of-truth precedence, shared transaction generation, ordered multi-file writes, partial-write recovery, and field-level command update semantics are defined by `docs/11-durable-state-protocol.md`.
+
+For durable-state semantics, `docs/11-durable-state-protocol.md` is later and more specific than the provisional queue/project vocabulary retained by the issue #5 command design. Command arguments/inputs/outputs remain owned by `docs/10-command-execution-contract.md`; state transition semantics must be reconciled to the durable-state protocol before command implementation.
+
+Project `BLOCKED` is derived from current-gate queue actionability, not copied from one blocked feature or one selected queue row. A durable-state transaction is not considered consistent unless `STATE.md` and `QUEUE.md` carry the same generation.
 
 ## Agent/skill routing contract
 

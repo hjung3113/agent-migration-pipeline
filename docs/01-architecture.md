@@ -26,37 +26,33 @@ OpenCode
 
 ## Agent responsibilities
 
-### migration-coordinator
+Role names alone are not a routing contract. The canonical trigger, exclusion, output-ownership, skill tie-break, and escalation rules are defined in `docs/09-agent-skill-routing.md`.
 
-Primary orchestration role. Chooses the next phase, delegates work, enforces gates, and updates durable state. It must not erase uncertainty to keep work moving.
+The architectural invariant is that `migration-coordinator` owns cross-role dispatch and phase/gate transitions. Specialist agents own one bounded artifact/question at a time and return adjacent-domain or blocking work to the coordinator rather than silently expanding scope.
 
-### legacy-analyzer
+| Agent | Primary responsibility |
+| --- | --- |
+| `migration-coordinator` | choose/delegate queue work, enforce gates, update durable state |
+| `legacy-analyzer` | map legacy application behavior, feature paths, dependencies, and side effects |
+| `dll-boundary-analyzer` | analyze external host/DLL contract and platform-dependent behavior |
+| `db-analyzer` | analyze MSSQL-resident semantics, integrity rules, and migration risks |
+| `migration-designer` | transform an approved behavior contract into target React/FastAPI/PostgreSQL design |
+| `implementer` | implement only an approved design after explicit implementation authorization |
+| `adversarial-reviewer` | independently identify implementation/spec mismatches without fixing them |
+| `verifier` | execute the strongest available parity judge and report evidence-based verdicts |
 
-Reads C#/WPF/configuration code and maps business features, entry points, dependencies, side effects, DB usage, and external calls. Read-only by default.
+Unknowns do not automatically mean STOP. They are persisted and escalated; the current gate stops only when proceeding would require invented behavior, violate an approval/design gate, or make verification invalid.
 
-### dll-boundary-analyzer
+## Skill ownership model
 
-Specializes in the host/DLL integration contract: public API, lifecycle, callbacks, threading, configuration, platform dependencies, and testability outside the host.
+Skills are selected by the artifact they produce, not by overlapping vocabulary:
 
-### db-analyzer
+- `behavior-contract` owns the observable feature contract;
+- `evidence-grading` owns confidence grading of an existing claim;
+- `uncertainty-management` owns a new unresolved-question record;
+- `parity-verification` owns the post-implementation verification report/verdict.
 
-Maps MSSQL schema, procedures, functions, triggers, constraints, query behavior, data semantics, and PostgreSQL migration risks.
-
-### migration-designer
-
-Transforms approved behavior contracts into target feature designs for React/FastAPI/PostgreSQL without mechanically preserving WPF/C# structure.
-
-### implementer
-
-Implements only an approved target design and records deviations instead of silently changing the contract.
-
-### adversarial-reviewer
-
-Reviews diffs/specs independently with the assumption that important behavior may have been lost or accidentally invented.
-
-### verifier
-
-Runs available automated checks and compares evidence. It must distinguish verified, inferred, and unverified outcomes.
+These skills may be composed in that workflow. For example, contract authoring may grade claims and separately register unanswered questions. `docs/09-agent-skill-routing.md` defines the deterministic tie-break algorithm.
 
 ## Why OpenCode-native first
 

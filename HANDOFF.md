@@ -5,6 +5,32 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #7 routing design completed, implementation still gated
+
+Issue #7 (ambiguous agent triggers/escalation and overlapping evidence-related
+skills) was reviewed adversarially as a design-only task. The issue's proposed
+one-line escalation/description changes are directionally correct but
+insufficient for a low-reasoning model: they do not define negative triggers,
+primary artifact ownership, tie-break behavior, or the difference between a
+normal return and a gate-blocking STOP.
+
+The canonical design is now `docs/09-agent-skill-routing.md`, with architecture,
+pipeline, and evidence docs linked to it. Routing is based on current phase +
+primary artifact. `migration-coordinator` owns cross-role dispatch; specialists
+return adjacent-domain work instead of silently expanding scope. The four
+overlapping skills are composable: behavior-contract owns the contract,
+evidence-grading owns confidence on an existing claim, uncertainty-management
+owns a new open question, and parity-verification owns the post-implementation
+verification report/verdict. STOP is reserved for conditions that actually
+block the current gate.
+
+No `.opencode/agents` or `.opencode/skills` implementation was changed. The
+exact implementation steps are documented in the design and should be applied
+only after explicit user authorization under AGENTS.md rule 13. The latest main
+already includes Issue #4's deterministic agent artifact/procedure contracts;
+Issue #7 implementation must extend those definitions rather than overwrite
+them.
+
 ## 2026-08-18 — Issue #10 observed/inferred provenance design completed
 
 Issue #10 was reviewed adversarially as a design/documentation defect. The

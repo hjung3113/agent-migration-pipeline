@@ -42,6 +42,17 @@ Artifact encoding is fixed as follows:
 
 A reviewer must treat an unmarked material claim, a mixed observation/inference claim, or an inference presented as observation as a specification defect.
 
+## Operational skill boundary
+
+Evidence-related skills are intentionally composable but have different primary outputs. The canonical routing rules are in `docs/09-agent-skill-routing.md`.
+
+- `behavior-contract` creates/updates the observable feature contract.
+- `evidence-grading` assigns confidence to an existing behavior claim from available evidence.
+- `uncertainty-management` creates/updates an unresolved-question record when the answer itself is not known.
+- `parity-verification` runs after implementation and independent review to produce the target-vs-contract/legacy verification report and verdict.
+
+When one workflow needs more than one of these outputs, choose the skill that owns the primary artifact and invoke the others only as supporting steps. Do not choose between them from overlapping words such as `behavior`, `evidence`, or `unknown`.
+
 ## Characterization strategy
 
 When possible, create a harness around an observable public boundary and capture:

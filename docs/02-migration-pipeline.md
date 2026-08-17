@@ -22,6 +22,23 @@ The lifecycle `stage` and `blocked` state are separate. Required artifacts are c
 
 `validate_scaffold.py` is the structural guard for this contract. A-1 validates deterministic metadata and artifact existence only; body/heading semantics remain a later validation layer.
 
+## Agent/skill routing contract
+
+The coordinator selects roles by **current phase + required primary artifact**, using `docs/09-agent-skill-routing.md` as the canonical routing design.
+
+| Pipeline work | Primary agent | Primary skill(s) |
+| --- | --- | --- |
+| legacy application discovery | `legacy-analyzer` | evidence grading / uncertainty only as supporting work |
+| MSSQL-resident discovery | `db-analyzer` | evidence grading / uncertainty only as supporting work |
+| host/DLL boundary discovery | `dll-boundary-analyzer` | evidence grading / uncertainty only as supporting work |
+| behavior specification | coordinator delegates contract work | `behavior-contract` owns the contract; `evidence-grading` and `uncertainty-management` may support it |
+| target design | `migration-designer` | target design procedure; unresolved semantics return to coordinator rather than being designed away |
+| implementation | `implementer` | implementation procedure only after approved design and explicit user build authorization |
+| independent review | `adversarial-reviewer` | review procedure; no self-fix |
+| parity verification | `verifier` | `parity-verification` owns the verification report/verdict |
+
+Specialists do not directly absorb adjacent-domain work. They return a routing/escalation packet to `migration-coordinator`. STOP applies only when the current gate cannot safely advance; non-blocking unknowns are persisted while unaffected work may continue.
+
 ## Phase 1 — Legacy discovery
 
 For each candidate business area:
@@ -38,6 +55,8 @@ For each candidate business area:
 
 Output: feature inventory + dependency map.
 
+DB-resident semantics and host/DLL contract questions discovered here are routed by the coordinator to `db-analyzer` and `dll-boundary-analyzer`; `legacy-analyzer` records the references but does not silently take over those specialist domains.
+
 ## Phase 2 — Behavior specification
 
 Describe each feature as a contract:
@@ -52,7 +71,7 @@ Inputs
   -> Error/warning behavior
 ```
 
-Each important rule receives supporting evidence and a confidence grade.
+`behavior-contract` owns this artifact. For each already-defined material claim, `evidence-grading` assigns confidence from actual evidence. When the unanswered question itself must be tracked, `uncertainty-management` records it separately. These supporting skills are composable; they are not alternative names for the same output.
 
 Gate: unresolved semantics that materially affect implementation require human review or remain explicitly provisional.
 
@@ -76,9 +95,11 @@ Possible outputs:
 
 Gate: reviewer checks that the design preserves business intent without carrying unnecessary WPF/MSSQL structure.
 
+`migration-designer` must return to the coordinator when a material design decision depends on missing behavior evidence or unresolved semantics; architecture preference is not allowed to close the question.
+
 ## Phase 4 — Implementation
 
-Implement one approved feature slice.
+Implement one approved feature slice only after the user explicitly authorizes implementation under `AGENTS.md` rule 13.
 
 Rules:
 
@@ -86,6 +107,7 @@ Rules:
 - do not broaden scope opportunistically
 - document deviations from the design
 - add characterization/contract tests when possible
+- return to the coordinator when implementation exposes a new design decision instead of resolving it in-place
 
 ## Phase 5 — Independent review
 
@@ -99,6 +121,8 @@ At minimum, review for:
 - error/edge-case changes
 - untested behavior presented as complete
 
+The adversarial reviewer reports findings; it does not modify the implementation while acting in the review role.
+
 ## Phase 6 — Verification
 
 Use the strongest available evidence, potentially including:
@@ -111,6 +135,8 @@ Use the strongest available evidence, potentially including:
 - callback/event comparison
 - exception/error comparison
 - manually captured evidence
+
+`parity-verification` is used only here, after implementation and independent review. It consumes predefined contract/evidence/comparison semantics and must not redefine them after seeing target results.
 
 A green test suite alone is not sufficient when coverage is incomplete.
 
@@ -133,11 +159,11 @@ Verification failure
       |
       v
 Classify cause
-  |-- implementation defect -> fix implementation
-  |-- incomplete spec        -> fix behavior contract
+  |-- implementation defect -> coordinator routes implementer fix
+  |-- incomplete spec        -> coordinator routes behavior-contract correction
   |-- repeated pattern       -> fix Rulebook/Skill/process
-  |-- unknown legacy fact    -> open question / human gate
+  |-- unknown legacy fact    -> uncertainty-management / human gate
       |
       v
-Re-run review and verification
+Re-run independent review and verification
 ```

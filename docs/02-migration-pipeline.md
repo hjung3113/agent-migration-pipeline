@@ -6,6 +6,8 @@ This document is the canonical definition of migration phases and phase-gate cri
 
 A phase gate has one of three results: `PENDING`, `PASS`, or `BLOCKED`.
 
+Gate result and operational project status are separate state dimensions. `gate_result: BLOCKED` means the next phase transition is not allowed; it does not by itself mean there is no useful gate-enabling work in the current phase. The canonical durable-state fields and derivation rules are defined in `docs/11-durable-state-protocol.md`.
+
 A criterion is `PASS` only when all of the following are true:
 
 1. the referenced artifact exists;
@@ -17,14 +19,14 @@ A criterion is `PASS` only when all of the following are true:
 
 Gate criteria live only in this document. Feature artifacts store criterion IDs, results, and evidence references; they do not redefine the criteria.
 
-When any criterion fails, first classify the cause and then apply the STOP/persistence contract in `docs/11-stop-condition-contract.md`:
+When any criterion fails, first classify the cause and apply the STOP/persistence ownership contract in `docs/11-stop-condition-contract.md`; exact STATE/QUEUE fields and transaction semantics come from `docs/11-durable-state-protocol.md`:
 
-1. record the gate as `BLOCKED` and stop the phase-advancing command; do not delegate work from the next phase;
+1. persist `current_gate: <Gate ID>`, `gate_result: BLOCKED`, and the exact `failed_gate_criteria`, then stop the phase-advancing command; do not delegate work from the next phase;
 2. if the failure is an actual unresolved fact, reuse an existing matching item in `docs/05-open-questions.md` or add a new one only when the unknown is not already tracked;
 3. if the failure is a missing artifact/prerequisite, reference the missing dependency/queue work instead of inventing an open question unless an unanswered fact actually exists;
 4. if the failure is an approval gate such as G3.5, persist the approval state/source in the referenced artifact and do not create an open question merely because authorization has not yet been given;
-5. for feature-level G2/G3 failures, set that feature's `feature-card.md` `blocked: true` without changing its lifecycle `stage`, and set the affected feature/queue work item to `BLOCKED` with the failed criterion/dependency reference;
-6. update `migration/STATE.md` to project-level `BLOCKED` only when the failed gate blocks the project-level phase/next gate or no actionable work remains at the current gate; a single feature-local failure must not automatically mark the whole project blocked.
+5. for feature-level G2/G3 failures, set that feature's `feature-card.md` `blocked: true` without changing its lifecycle `stage`, and set only queue rows actually prevented by the failed criterion/dependency to `BLOCKED`;
+6. derive project `status` from current-phase/current-gate queue actionability according to `docs/11-durable-state-protocol.md`; never copy `gate_result` into project `status` automatically.
 
 Human input resolves source facts or supplies approvals; it does not bypass a false criterion. If approval arrives in chat, persist that approval in the referenced artifact before re-evaluating the gate.
 
@@ -72,7 +74,15 @@ The seven `.opencode/commands/migration-*.md` files are phase entrypoints, not i
 
 Command implementations must not infer a queue row or feature from chat context, must not advance a phase when a required artifact/gate is missing, and must keep feature-local blocking separate from project-level blocking. Canonical artifact paths come from the feature-artifact contract and the merged issue #4 agent contracts rather than being chosen independently inside each command.
 
-Issue #5 command implementation remains gated on design approval and must be reconciled with issue #1 feature metadata, issue #3 phase-gate checklists, and issue #15's remaining artifact/template filename mismatch.
+Issue #5 command implementation remains gated on design approval and must be reconciled with issue #1 feature metadata, issue #3 phase-gate checklists, issue #13 STOP persistence ownership, and issue #14 durable-state semantics.
+
+## Durable state contract
+
+`migration/STATE.md` and `migration/QUEUE.md` are the cross-session durable-state interface. Their machine-readable schemas, closed state domains, legal transitions, dependency/blocker grammar, authority precedence, shared generation, ordered multi-file writes, stale/partial-write recovery, and field-level command mutation semantics are defined by `docs/11-durable-state-protocol.md`.
+
+For state semantics, `docs/11-durable-state-protocol.md` is later and more specific than the provisional queue/project vocabulary in `docs/10-command-execution-contract.md` and the prose persistence wording in `docs/11-stop-condition-contract.md`. The command design remains authoritative for invocation/inputs/outputs/selected-row scope; the STOP design remains authoritative for stop classification, specialist payloads, OQ deduplication, and coordinator routing; exact durable state fields/transitions use the #14 protocol.
+
+The key invariant is that project `status` and phase `gate_result` are not synonyms. A gate may be `BLOCKED` while the project remains `ACTIVE` because gate-enabling queue work is still actionable. `STATE.md` and `QUEUE.md` are consistent only when they carry the same transaction generation.
 
 ## Agent/skill routing contract
 
@@ -91,7 +101,7 @@ The coordinator selects roles by **current phase + required primary artifact**, 
 
 Specialists do not directly absorb adjacent-domain work. They return a routing/escalation packet to `migration-coordinator`. STOP applies only when the current gate cannot safely advance; non-blocking unknowns are persisted while unaffected work may continue.
 
-The seven canonical unknown classes remain policy in `AGENTS.md`. `docs/11-stop-condition-contract.md` defines their local publication into agent context, the common specialist STOP payload, and the coordinator-owned file-level persistence actions. Gate criterion definitions remain authoritative in this document; STOP handling must not copy or redefine them.
+The seven canonical unknown classes remain policy in `AGENTS.md`. `docs/11-stop-condition-contract.md` defines their local publication into agent context, the common specialist STOP payload, and the coordinator-owned persistence/routing decisions. Gate criterion definitions remain authoritative in this document; exact STATE/QUEUE persistence uses `docs/11-durable-state-protocol.md`.
 
 ## Phase 1 — Legacy discovery
 

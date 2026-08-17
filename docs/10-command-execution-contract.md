@@ -14,7 +14,7 @@ Make every migration command executable without inferring:
 - which queue/state records may change;
 - when execution must stop rather than advance the pipeline.
 
-Commands are phase entrypoints. Specialist agents perform delegated work, but the command contract owns invocation validation, prerequisite validation, expected durable outputs, and allowed state transitions.
+Commands are phase entrypoints. Specialist agents perform delegated work, but the command contract owns invocation validation, prerequisite validation, expected durable outputs, and selected-row mutation scope. Exact queue/project state values, transitions, and transaction behavior are owned by `docs/11-durable-state-protocol.md`.
 
 ## Adversarial findings
 
@@ -25,9 +25,11 @@ The issue is valid, but adding the same four headings mechanically to all seven 
 3. A feature ID cannot identify the queue row to update. Current queue items such as Q-004/Q-010 are broader than one feature.
 4. A successful feature command must not mark a broad queue row `DONE` unless that row's own completion artifact is fully satisfied.
 5. `migration/STATE.md` is project-level summary state. One blocked feature must not automatically block the whole project when other queue items remain actionable.
-6. Issue #4 is now implemented by merged PR #25, so command input/output paths must align with the merged agent contracts rather than the pre-#4 prose.
-7. Canonical feature paths still have one unresolved mismatch under issue #15: merged feature design uses `verification.md`, while the existing template is `verification-report.md`.
+6. Issue #4 is implemented by merged PR #25, so command input/output paths must align with the merged agent contracts rather than pre-#4 prose.
+7. Issue #15 has since aligned the canonical verification artifact/template on `verification.md`; commands must use that merged path rather than preserve the historical mismatch.
 8. Phase-gate criteria remain a separate concern under issue #3. Commands should reference one authoritative gate checklist instead of copying subjective variants into each command.
+9. Issue #13 now owns STOP classification, specialist STOP payloads, OQ deduplication, and coordinator routing; command failure behavior must reuse that model rather than invent a second STOP taxonomy.
+10. Issue #14 later separates project operability, gate result, and queue lifecycle. Command implementation must not retain this document's earlier provisional state vocabulary as a competing contract.
 
 ## Argument contract
 
@@ -80,7 +82,9 @@ Before a mutating command advances work, the coordinator reads:
 - the queue row selected by `--queue`;
 - feature artifacts required by that phase.
 
-`migration-status` reads the same global state plus existing feature artifacts. Once issue #1 is implemented, it also runs the same structural feature-artifact validator and surfaces failures as process blockers.
+It must also validate the STATE/QUEUE schema and matching transaction generation defined by `docs/11-durable-state-protocol.md` before starting a durable mutation.
+
+`migration-status` reads the same global state plus existing feature artifacts. Once issue #1 is implemented, it also runs the same structural feature-artifact validator and surfaces failures as process blockers. It reports state-schema/generation inconsistency but does not repair it implicitly.
 
 ## Queue selection and completion
 
@@ -112,23 +116,31 @@ Until that metadata implementation exists, commands must not invent a parallel f
 
 `migration/QUEUE.md` tracks resumable work items. A command may update only the row selected by `--queue`.
 
-Use the current repository vocabulary unless separately redesigned:
+The canonical queue statuses and legal transitions are defined by `docs/11-durable-state-protocol.md`:
 
-- `TODO`: actionable or incomplete;
-- `BLOCKED`: a durable prerequisite/unknown prevents the selected work item;
-- `DONE`: the row's stated completion artifact exists and its applicable gate passed.
+- `TODO`: actionable and ready to start;
+- `IN_PROGRESS`: durable execution has begun but completion is not yet justified;
+- `BLOCKED`: an explicit durable dependency/blocker prevents progress;
+- `DONE`: the row's stated completion artifact and applicable completion/gate condition are satisfied.
 
-Argument errors and transient tool failures do not change durable queue status unless they reveal a real prerequisite blocker.
+Argument errors do not change queue status. A transient tool/runtime failure does not fabricate `BLOCKED`; if durable work already started, the selected row remains `IN_PROGRESS`.
 
-### Project state
+### Project and gate state
 
-`migration/STATE.md` summarizes the overall phase/gate. Feature-local work updates project state only when it changes the project-level phase/gate or when no actionable work remains at the current gate.
+`migration/STATE.md` is the derived project summary. It stores project operational `status` separately from the current phase `gate_result`.
+
+- gate evaluation/phase advancement follows `docs/02-migration-pipeline.md`;
+- STOP cause classification and coordinator routing follow `docs/11-stop-condition-contract.md`;
+- project status, queue-derived lists, shared generation, write ordering, and recovery follow `docs/11-durable-state-protocol.md`;
+- a failed gate does not automatically make the project operationally blocked while gate-enabling work is actionable.
+
+Feature-local work updates project state only through the durable-state derivation rules; commands must not copy feature/queue/gate status strings directly into project `status`.
 
 ## Open-question rule
 
 Update `docs/05-open-questions.md` only for newly discovered unresolved facts that affect behavior, data integrity, DLL/platform constraints, security, deployment, or another design/verification decision.
 
-Do not create an open question for malformed arguments, transient tool failures, or already-recorded blockers.
+Do not create an open question for malformed arguments, transient tool failures, missing artifacts by themselves, approval absence by itself, or already-recorded blockers. STOP/OQ classification follows `docs/11-stop-condition-contract.md`.
 
 ## Per-command contract
 
@@ -139,10 +151,12 @@ Do not create an open question for malformed arguments, transient tool failures,
 | `migration-design` | feature card, legacy map, behavior contract, applicable evidence, gate decision | `target-feature-design.md` | `designed` only after the applicable design gate passes |
 | `migration-implement` | approved behavior contract/design plus explicit user implementation gate | only code/config/test paths explicitly named by the approved target design; blocker/deviation updates in existing durable state | `implementing`; never self-approves review/verification |
 | `migration-review` | contract, evidence, target design, exact implementation diff/changed paths | `review.md` | `reviewing`; PASS permits verification but not completion |
-| `migration-verify` | contract, target design, review, implementation, available judges/evidence | canonical verification artifact from `migration/features/README.md` | enter `verifying`; only complete PASS may advance to `done` |
+| `migration-verify` | contract, target design, review, implementation, available judges/evidence | `verification.md` | enter `verifying`; only complete PASS may advance to `done` |
 | `migration-status` | global state/queue/Rulebook/open questions/features | no durable output | no mutation |
 
 All feature-local paths are under `migration/features/<feature-id>/`.
+
+The table describes feature-lifecycle outcomes, not queue status transitions. Every mutating command's queue/project mutation must separately follow `docs/11-durable-state-protocol.md`.
 
 ## Canonical path authority
 
@@ -154,11 +168,11 @@ Path authority is:
 2. merged issue #4 agent contracts for role ownership and conditional reports;
 3. matching templates where names agree.
 
-At the time of this design, the canonical verification artifact is `migration/features/<feature-id>/verification.md`. The still-existing `docs/templates/verification-report.md` mismatch is issue #15 work and must not cause command implementation to switch to `verification-report.md` locally.
+The canonical verification artifact is `migration/features/<feature-id>/verification.md`, and the template is now `docs/templates/verification.md`. Issue #15 resolved the former `verification-report.md` mismatch; commands must not reintroduce the obsolete filename.
 
 ## Preconditions and stop behavior
 
-Gate checklist details belong to issue #3. Commands reference those authoritative checks rather than restating subjective phrases.
+Gate checklist details belong to issue #3. Commands reference those authoritative checks rather than restating subjective phrases. When execution cannot safely continue, STOP classification/payload/routing follows `docs/11-stop-condition-contract.md`, while exact queue/STATE mutations follow `docs/11-durable-state-protocol.md`.
 
 ### `migration-discover`
 
@@ -231,20 +245,27 @@ No phase prerequisite. It reports durable repository state only and never infers
 | Failure class | Durable mutation |
 | --- | --- |
 | invocation/argument error | none |
-| transient tool/runtime failure | none unless a durable blocker is discovered |
-| missing durable prerequisite | selected queue item may become `BLOCKED`; feature `blocked: true` once metadata exists |
-| newly discovered unknown fact | update open questions; block only affected scope when material |
-| implementation/review/verification defect | persist applicable report/evidence and route through failure loop; do not mark completion |
-| successful execution | persist canonical output; update lifecycle/queue only as justified by the selected row and gate |
+| transient tool/runtime failure before durable start | none |
+| transient tool/runtime failure after durable start | retain selected row `IN_PROGRESS`; persist only artifacts already validly produced |
+| missing durable prerequisite | before start: no transition or selected row `BLOCKED` only when the blocker is a durable row condition; after start: `IN_PROGRESS -> BLOCKED` when the protocol's blocker rule is satisfied |
+| newly discovered unknown fact | apply STOP/OQ deduplication rules; block only affected scope when material |
+| approval gate / contradiction / missing evidence | apply the STOP contract without fabricating an OQ; persist exact queue/state outcome through the durable-state protocol |
+| implementation/review/verification defect | persist applicable report/evidence and route through failure loop; keep queue incomplete unless a durable prerequisite blocker exists |
+| successful execution | persist canonical output; mark selected row `DONE` only when its full completion condition is satisfied |
+
+Exact transitions, generation increments, write ordering, and project derivation are in `docs/11-durable-state-protocol.md`.
 
 ## Dependency ordering
 
 Issue #5 implementation must be consistent with:
 
 - issue #1: feature lifecycle metadata and structural artifact validation;
+- issue #2: closed enum/ID/reference validation infrastructure;
 - issue #3: deterministic phase-gate checklists;
 - issue #4: merged specialist agent input/output and write-ownership contracts;
-- issue #15: remaining artifact/template filename alignment.
+- issue #13: STOP classification, specialist payload, OQ deduplication, and coordinator routing;
+- issue #14: canonical queue/project durable-state schema, transitions, generation, and recovery;
+- merged issue #15 artifact filename alignment (`verification.md`).
 
 If two source-of-truth contracts disagree, implementation stops until the contradiction is resolved.
 
@@ -261,7 +282,9 @@ Each must contain explicit sections equivalent to:
 - `State updates`;
 - `Failure behavior`.
 
-The implementation should also add a structural check that all seven command files contain the required contract sections and that referenced canonical artifact paths agree with the feature-artifact design. That check validates structure/path consistency, not semantic correctness.
+`State updates` must name the selected queue transition, feature metadata mutation if any, gate re-evaluation if any, and project-state derivation using the fields/transaction protocol in `docs/11-durable-state-protocol.md` rather than generic prose such as "update queue/state".
+
+The implementation should also add a structural check that all seven command files contain the required contract sections and that referenced canonical artifact paths agree with the feature-artifact design. State-schema validation belongs to the shared repository validator described by issues #2/#14.
 
 ## Non-goals
 
@@ -270,9 +293,9 @@ This design does not:
 - modify command implementation files;
 - redefine the merged issue #4 agent procedures;
 - define issue #3 gate checklist contents;
-- resolve issue #15's remaining template filename conflict;
+- redefine issue #13 STOP cause/routing semantics;
+- redefine issue #14 queue/project state semantics;
 - implement issue #1 lifecycle metadata;
-- invent new queue status values;
 - define feature-specific business behavior.
 
 ## Acceptance criteria
@@ -283,9 +306,9 @@ Issue #5 design is complete when:
 2. malformed arguments cause zero durable writes;
 3. every mutating command selects an explicit queue row;
 4. per-command required inputs and durable outputs are exact;
-5. feature, queue, and project state ownership are separated;
+5. feature, queue, gate, STOP-routing, and project state ownership are separated;
 6. broad queue rows cannot be falsely completed by one feature run;
 7. precondition failures have explicit stop behavior;
 8. status is explicitly read-only;
-9. canonical path conflicts are treated as dependency work rather than silently resolved;
-10. later command implementation must align with the final gate/artifact contracts before completion.
+9. canonical artifact paths are sourced from the merged feature contract rather than local command choices;
+10. later command implementation must align with the final feature, gate, STOP, artifact, and durable-state contracts before completion.

@@ -2,43 +2,53 @@
 
 Issue: #6 — OpenCode skills have procedures but do not consistently define artifact paths or decision branches.
 
-This document defines the design only. The `.opencode/skills/*/SKILL.md` files, agents, commands, templates, and validators are implementation work and are intentionally not changed in this pass.
+This document defines the design only. The `.opencode/skills/*/SKILL.md` files and validation tooling are implementation work and are intentionally not changed in this pass.
 
 ## Goal
 
 Make every migration skill executable by a low-reasoning model without requiring it to infer:
 
 - which durable artifacts to read;
-- where a result must be persisted;
+- where a result belongs;
 - what to do when a prerequisite is missing;
-- whether it may continue with partial evidence;
-- who owns lifecycle/state transitions.
+- whether partial evidence permits continuation;
+- who persists the result and who advances lifecycle state.
 
-The contract must remain consistent across skill, agent, and command layers instead of duplicating competing path conventions.
+The skill contract must reuse the same artifact vocabulary as the agent and command layers instead of creating a third independent path scheme.
+
+## Current repository constraints
+
+This design is based on the current `main`, including the issue #1 artifact contract and the issue #4 agent-procedure implementation.
+
+- `docs/08-feature-artifact-validation.md` defines canonical feature filenames.
+- PR #25 / issue #4 now gives agents explicit artifact contracts and establishes an important permission pattern: read-only specialist agents return complete report bodies and `migration-coordinator` persists them.
+- `docs/templates/legacy-map.md` and `docs/templates/review.md` now exist after issue #4; issue #15's original missing-template observation is therefore partially stale. Remaining template/canonicalization work stays outside issue #6.
+- Issue #5 command contracts may still evolve, so skills must define artifact destinations without taking ownership of command arguments or state transitions.
 
 ## Adversarial findings
 
-The issue identifies a real execution gap, but its literal recommendation is insufficient on its own.
+The issue identifies a real execution gap, but the literal fix of adding paths plus one `if-then` to each skill is insufficient.
 
-1. Adding one arbitrary `if-then` to each skill does not define failure semantics. Branches must distinguish missing prerequisites, unavailable evidence, contradictory evidence, and blocking unknowns.
-2. Repeating full path rules independently in every skill would create nine copies of the same contract and make issues #4 and #5 easier to implement inconsistently.
-3. Templates are schemas, not output locations. `docs/templates/behavior-contract.md` does not tell an agent where the feature-specific contract belongs.
-4. The current repository already has a canonical feature artifact contract from `docs/08-feature-artifact-validation.md`: `feature-card.md`, `legacy-map.md`, `behavior-contract.md`, `target-feature-design.md`, `review.md`, and `verification.md`. Issue #6 must consume that contract rather than invent another naming scheme.
-5. Issue #15 is partially stale after the issue #1 design: canonical feature filenames are now defined, but some supporting templates are still absent. Skill routing must not depend on those templates already existing.
-6. A skill should not independently mutate `migration/STATE.md`, `migration/QUEUE.md`, or lifecycle `stage`. Otherwise commands, coordinator agents, and skills can race or disagree about phase transitions. The caller owns orchestration state; the skill owns its domain artifact.
-7. Some skills are feature-scoped while DLL-boundary analysis is primarily project-scoped. A single hard-coded feature path for all skills would be incorrect.
-8. Issue #9 (evidence grade history) and issue #11 (verification judge self-check) are higher-severity semantic controls. This design must not silently absorb or weaken those separate requirements.
+1. A cosmetic branch does not define failure semantics. Skills must distinguish missing prerequisites, unavailable optional evidence, contradictory evidence, and blocking unknowns.
+2. Copying the full path contract independently into nine skills would create path drift across agent/command/skill layers. The paths must come from one vocabulary.
+3. Templates are schemas, not output locations. Reading `docs/templates/behavior-contract.md` does not imply writing the result back into `docs/templates/`.
+4. The issue predates the canonical filenames established by issue #1. Skills must use `feature-card.md`, `legacy-map.md`, `behavior-contract.md`, `target-feature-design.md`, `review.md`, and `verification.md`.
+5. Skill output ownership and write permission are different concepts. A skill must declare where its result belongs even when the invoking agent is read-only and must hand the body to the coordinator for persistence.
+6. Skills must not independently update `migration/STATE.md`, `migration/QUEUE.md`, or lifecycle `stage`; otherwise commands, agents, and skills can race or disagree about phase transitions.
+7. DLL-boundary analysis can be feature-local or project-wide. Forcing every skill into a feature path would be wrong.
+8. Implementation-time discovery must not rewrite an approved target design in place. A material deviation reopens the design gate instead of being silently recorded as a post-hoc design change.
+9. Issue #9 (evidence-grade history) and issue #11 (verification-judge self-check) are stricter semantic controls. Issue #6 must not absorb or weaken them.
 
 ## Canonical path vocabulary
 
-For a feature-scoped invocation:
+For feature-scoped work:
 
 ```text
-FEATURE_ID := validated lowercase kebab-case feature id
+FEATURE_ID   := validated lowercase kebab-case feature id
 FEATURE_ROOT := migration/features/<FEATURE_ID>/
 ```
 
-Canonical feature artifacts are inherited from `docs/08-feature-artifact-validation.md`:
+Canonical feature artifacts inherited from `docs/08-feature-artifact-validation.md` are:
 
 ```text
 FEATURE_ROOT/feature-card.md
@@ -49,134 +59,144 @@ FEATURE_ROOT/review.md
 FEATURE_ROOT/verification.md
 ```
 
-Supporting feature evidence may be stored under:
+Supporting feature evidence may use:
 
 ```text
-FEATURE_ROOT/evidence/<evidence-id>.md
 FEATURE_ROOT/db-dependency-report.md
+FEATURE_ROOT/dll-boundary-report.md
+FEATURE_ROOT/evidence/<evidence-id>.md
 ```
 
-Project-wide reusable evidence belongs under:
+Project-wide reusable evidence uses:
 
 ```text
-migration/evidence/
+migration/evidence/<evidence-id>.md
+migration/evidence/dll-boundary-report.md
 ```
 
-Project-wide unresolved facts belong in:
+Project-wide unresolved facts use:
 
 ```text
 docs/05-open-questions.md
 ```
 
-Feature-local unresolved facts belong in `FEATURE_ROOT/feature-card.md`, consistent with the logical-artifact mapping in `docs/08-feature-artifact-validation.md`.
+Feature-local unknowns must be reflected in `FEATURE_ROOT/feature-card.md` so the feature remains resumable. A coordinator may also cross-reference the same Open Question ID in `docs/05-open-questions.md`; duplication must be by ID/reference, not by silently diverging copies of the same question.
 
-Templates under `docs/templates/` define document shape only. A skill must never write completed work back into a template file.
+Templates under `docs/templates/` define document shape only. Completed work is never written into a template path.
 
 ## Invocation contract
 
-Before any skill procedure starts, its caller must resolve the invocation scope.
+Before a skill procedure starts, its caller resolves the scope.
 
-### Feature-scoped skills
+### Feature-scoped invocation
 
-The caller must provide a valid `FEATURE_ID`. If the feature ID is missing, malformed, or ambiguous, the skill returns `BLOCKED` to the caller and writes no feature artifact.
+The caller supplies a valid `FEATURE_ID`. If it is missing, malformed, or ambiguous, return `BLOCKED` and produce no feature artifact.
 
-### Project-scoped skills
+### Project-scoped invocation
 
-The caller must explicitly identify project scope. Project-scoped skills do not invent a feature ID merely to obtain an output directory.
+The caller explicitly supplies project scope or a project-level queue item. A project-scoped skill must not invent a feature ID merely to obtain an output directory.
 
-### Existing outputs
+### Existing canonical output
 
-If the canonical output already exists, the skill updates it in place. It must not create alternate names such as `target-design-v2.md`, `verification-final.md`, or dated duplicates unless a separate evidence record is intentionally required.
+If the canonical output already exists, update that artifact in place when the current role has write permission. Do not create names such as `target-design-v2.md`, `verification-final.md`, or dated duplicates.
 
-## Common execution rules
+If the invoking role is read-only, return the complete replacement/update body plus the canonical destination to `migration-coordinator`. Lack of edit permission never changes the destination path.
 
-Every implemented `SKILL.md` must contain these sections in this order:
+## Required `SKILL.md` structure
 
-1. `## Inputs` — required artifact paths and external/runtime inputs.
-2. `## Outputs` — canonical primary output path plus permitted secondary writes.
-3. `## Procedure` — numbered execution steps, normally 5–8 steps.
+Every implemented skill must contain these sections in this order:
+
+1. `## Inputs` — required artifact paths plus required external/runtime inputs.
+2. `## Outputs` — canonical destination(s), scope rules, and whether the skill writes directly or returns a body for persistence.
+3. `## Procedure` — numbered steps, normally 5–8, with `[Input]` / `[Output]` path annotations on durable artifact reads/writes.
 4. `## Branches` — explicit if-then behavior for missing, partial, contradictory, or blocking information.
-5. `## Done means` — observable completion condition for the skill only.
+5. `## Done means` — the completion condition for the skill itself, not the migration phase.
 
-The common branch policy is:
+## Common branch semantics
+
+Every skill implements the following behavior where applicable:
 
 - **If a required durable input is missing:** return `BLOCKED`; do not synthesize the missing artifact and do not advance lifecycle state.
-- **If optional evidence is unavailable:** continue only when the output can truthfully be `PARTIAL` or provisional; record the gap in the owning feature artifact or project open-question file.
-- **If evidence conflicts:** preserve the conflict and return `PARTIAL` or `BLOCKED` as appropriate; never choose the convenient source silently.
-- **If a material unknown changes the correctness of the next irreversible decision:** stop that decision and persist the unknown rather than guessing.
-- **If an output already exists:** update it in place and preserve still-valid evidence/unknowns.
+- **If required external/runtime evidence is unavailable:** return `BLOCKED` when the next decision depends on it; otherwise return a truthful `PARTIAL` result with the gap recorded.
+- **If optional evidence is unavailable:** continue only when the result can remain valid as `PARTIAL`/provisional.
+- **If evidence conflicts:** preserve both sides and return `PARTIAL` or `BLOCKED`; never select the convenient source silently.
+- **If a material unknown changes a medium/high lock-in decision:** stop that decision and persist the unknown instead of guessing.
+- **If the canonical output already exists:** update it in place or return an update body for the coordinator; never create an alternate canonical file.
 
-Skills do not update `migration/STATE.md`, `migration/QUEUE.md`, or `feature-card.md` lifecycle `stage` solely because their procedure finished. The command/coordinator layer performs those transitions after checking the skill result.
+Skill success does not itself update `migration/STATE.md`, `migration/QUEUE.md`, or feature lifecycle `stage`/`blocked`. The coordinator performs those transitions after evaluating the returned result and applicable gates.
 
 ## Skill routing matrix
 
-| Skill | Required durable inputs | Primary output | Permitted secondary writes | Required branch behavior |
-| --- | --- | --- | --- | --- |
-| `legacy-discovery` | valid `FEATURE_ID`; accessible legacy source/runtime inputs | `FEATURE_ROOT/legacy-map.md` and create/update `FEATURE_ROOT/feature-card.md` | feature-local unknowns in `feature-card.md`; cross-feature/platform unknowns in `docs/05-open-questions.md` | If legacy source/runtime evidence is unavailable, return `BLOCKED`; do not fabricate a map. |
-| `behavior-contract` | `FEATURE_ROOT/feature-card.md`; `FEATURE_ROOT/legacy-map.md` | `FEATURE_ROOT/behavior-contract.md` | evidence records; feature-local/project unknowns | If a material behavior cannot be established, write a PARTIAL contract and keep the rule unresolved instead of inventing a requirement. |
-| `db-migration-analysis` | `FEATURE_ROOT/legacy-map.md`; accessible MSSQL schema/object/query evidence | `FEATURE_ROOT/db-dependency-report.md` | evidence records; feature-local/project unknowns | If DB behavior is referenced but the DB object or runtime semantics cannot be inspected, mark that dependency unresolved and block any PostgreSQL semantic decision that depends on it. |
-| `dll-boundary-analysis` | project scope; accessible DLL/host metadata or runtime evidence | `migration/evidence/dll-boundary-report.md` | `docs/05-open-questions.md` | If host entry points/lifecycle cannot be observed, record the unknown and do not select a compatibility architecture. |
-| `evidence-grading` | explicit claim plus its referenced evidence; existing record when one exists | feature scope: `FEATURE_ROOT/evidence/<evidence-id>.md`; project scope: `migration/evidence/<evidence-id>.md` | update the owning contract/report with the evidence-record reference when appropriate | If evidence does not support a higher certainty, keep or lower the grade; grade-history mechanics remain governed by #9. |
-| `target-feature-design` | `FEATURE_ROOT/behavior-contract.md`; relevant `legacy-map.md` and supporting DB/DLL evidence | `FEATURE_ROOT/target-feature-design.md` | feature-local/project unknowns | If a P0/material unknown changes the design choice, mark that part provisional or `BLOCKED`; do not choose a convenient assumption. |
-| `feature-migration` | approved `FEATURE_ROOT/behavior-contract.md`; approved `FEATURE_ROOT/target-feature-design.md`; no unresolved blocking precondition | repository implementation/tests for the bounded feature slice | record design deviations in the existing target-design artifact and new evidence/unknown records | If any required precondition is absent or blocking, return `BLOCKED` before modifying implementation files. |
-| `parity-verification` | `FEATURE_ROOT/behavior-contract.md`; implementation under test; `FEATURE_ROOT/review.md`; available judge/evidence inputs | `FEATURE_ROOT/verification.md` | evidence records; unresolved verification gaps | If the available judge cannot support the claimed verdict, return `PARTIAL`/`BLOCKED`, never PASS. Judge self-check requirements remain governed by #11. |
-| `uncertainty-management` | the artifact/evidence that exposed the unknown plus invocation scope | feature-local: update `FEATURE_ROOT/feature-card.md`; project/cross-feature: update `docs/05-open-questions.md` | add references from affected contract/design/report | If the unknown affects multiple features, the DLL boundary, deployment, or a global policy, route it to `docs/05-open-questions.md`; otherwise keep the canonical question in the feature card. |
+| Skill | Required durable inputs | Canonical output/destination | Required branch behavior |
+| --- | --- | --- | --- |
+| `legacy-discovery` | valid `FEATURE_ID`; `FEATURE_ROOT/feature-card.md` when already created; accessible legacy source/runtime scope | `FEATURE_ROOT/legacy-map.md`; may return feature-card/open-question updates to coordinator | If legacy scope or evidence is unavailable, return `BLOCKED`; do not fabricate a dependency map. |
+| `behavior-contract` | `FEATURE_ROOT/feature-card.md`; `FEATURE_ROOT/legacy-map.md`; relevant evidence | `FEATURE_ROOT/behavior-contract.md`; supporting feature evidence under `FEATURE_ROOT/evidence/` | If material behavior cannot be established, produce `PARTIAL` rather than inventing a requirement. |
+| `db-migration-analysis` | `FEATURE_ROOT/legacy-map.md`; accessible MSSQL schema/object/query evidence | `FEATURE_ROOT/db-dependency-report.md` | If referenced DB behavior cannot be inspected, mark it unresolved and block any PostgreSQL semantic choice that depends on it. |
+| `dll-boundary-analysis` | DLL/host evidence plus either feature scope or explicit project scope | feature: `FEATURE_ROOT/dll-boundary-report.md`; project: `migration/evidence/dll-boundary-report.md` | If lifecycle/threading/callback/ownership facts needed for architecture are unknown, return `PARTIAL/BLOCKED` and do not choose a compatibility architecture. |
+| `evidence-grading` | explicit claim; referenced evidence; existing evidence record when present | feature: `FEATURE_ROOT/evidence/<evidence-id>.md`; project: `migration/evidence/<evidence-id>.md` | If evidence does not justify greater certainty, do not upgrade the grade. Grade-history mechanics remain governed by #9. |
+| `target-feature-design` | `FEATURE_ROOT/feature-card.md`; `legacy-map.md`; `behavior-contract.md`; applicable DB/DLL reports; Rulebook/open questions | `FEATURE_ROOT/target-feature-design.md` | If an unresolved fact changes a public contract, data model, platform boundary, or other medium/high lock-in choice, return a provisional/`BLOCKED` design. |
+| `feature-migration` | approved `FEATURE_ROOT/behavior-contract.md`; approved `FEATURE_ROOT/target-feature-design.md`; no blocking prerequisite; explicit user implementation gate | code/tests only at target paths declared by the approved design; return changed paths/check results/deviations to coordinator | If a precondition is absent or implementation reveals a material design change, stop that part and return `BLOCKED`; do not rewrite the approved design or broaden scope. |
+| `parity-verification` | `FEATURE_ROOT/behavior-contract.md`; implementation under test; `FEATURE_ROOT/review.md`; available judge/evidence inputs | `FEATURE_ROOT/verification.md` | If the available judge cannot support the claimed verdict, return `PARTIAL/BLOCKED`, never PASS. Judge self-check mechanics remain governed by #11. |
+| `uncertainty-management` | artifact/evidence that exposed the unknown plus resolved scope | feature-local update request for `FEATURE_ROOT/feature-card.md`; project/cross-feature update for `docs/05-open-questions.md` | If the unknown affects multiple features, DLL/host behavior, deployment, or global policy, route it project-wide; otherwise keep it attached to the feature. |
 
 ## Responsibility boundaries
 
 ### Skill
 
-Owns reusable domain procedure and its canonical artifact writes.
+Defines the reusable procedure, canonical destination, branch semantics, and returned result shape. It may persist the result only when the invoking role has permission.
 
-### Agent
+### Specialist agent
 
-Owns role-specific reasoning and delegation. Agents must consume this routing contract rather than redefine different output paths.
+Provides role-specific reasoning. Read-only agents return the complete artifact body plus canonical destination; editable agents may persist when allowed. Agent paths must remain consistent with this contract.
 
 ### Command
 
-Owns operator arguments, precondition checks, invocation scope, lifecycle transition requests, and user-facing failure handling.
+Owns operator arguments, prerequisite checks, invocation scope, failure presentation, and the request to advance state. Issue #5 may add command-specific rules, but it must not introduce competing artifact names.
 
-### Coordinator
+### Migration coordinator
 
-Owns `migration/STATE.md`, `migration/QUEUE.md`, and feature lifecycle transition decisions after successful skill completion.
+Owns persistence for read-only specialist results and owns `migration/STATE.md`, `migration/QUEUE.md`, feature lifecycle metadata, and durable blocker routing after each result.
 
-This separation is the dependency contract for issues #4 and #5: their implementations must reference the same paths rather than establish new ones.
+The issue #4 agent implementation already establishes most of this permission model. Issue #6 implementation must align skills to it rather than overwrite it.
 
 ## Implementation requirements for issue #6
 
 A later implementation pass should update all nine `.opencode/skills/*/SKILL.md` files to conform to this design.
 
-For each skill implementation:
+For each skill:
 
-1. add explicit `Inputs`, `Outputs`, `Procedure`, `Branches`, and `Done means` sections;
-2. use the canonical paths in this document;
-3. keep procedures compact enough for low-reasoning models;
-4. include at least one meaningful failure/uncertainty branch, not a cosmetic if-then statement;
-5. never make a skill responsible for queue/state transitions;
-6. preserve the stricter semantics of issues #9 and #11 for their dedicated implementation passes.
+1. add `Inputs`, `Outputs`, `Procedure`, `Branches`, and `Done means`;
+2. use the path vocabulary and scope routing in this document;
+3. include `[Input]` / `[Output]` markers on numbered durable-artifact steps;
+4. keep procedures compact enough for low-reasoning models;
+5. include meaningful stop/partial branches rather than cosmetic conditions;
+6. state direct-write versus coordinator-persist behavior explicitly;
+7. keep lifecycle/state mutation outside the skill;
+8. preserve the stricter requirements of #9 and #11 for their dedicated passes.
 
-Implementation should also add a deterministic scaffold check that every `SKILL.md` contains the required structural sections. Semantic validation of whether a branch is correct remains review work unless a later schema is defined.
+A deterministic scaffold check may verify that every `SKILL.md` has the required structural sections. Semantic correctness of a branch remains review work unless a later machine-readable schema is designed.
 
 ## Non-goals
 
-This issue does not:
+Issue #6 does not:
 
-- implement evidence grade history or anti-upgrade mechanics from #9;
-- change verification negative-control/judge rules from #11;
-- fully implement agent procedures from #4;
-- fully implement command arguments/state-update rules from #5;
-- create missing supporting templates from #15;
-- change feature lifecycle metadata or required canonical files from `docs/08-feature-artifact-validation.md`;
-- implement or modify migration application code.
+- implement evidence-grade history or anti-upgrade mechanics from #9;
+- change negative-control/judge requirements from #11;
+- redo the agent procedures already implemented for #4 except where a later consistency pass is required;
+- define the full command argument/state-update contract from #5;
+- finish remaining template/canonicalization work from #15;
+- change lifecycle metadata or canonical required files from `docs/08-feature-artifact-validation.md`;
+- modify migration application code.
 
 ## Acceptance criteria
 
 The design is ready for implementation when:
 
-- every skill has one unambiguous primary output location;
-- feature-local versus project-wide scope has deterministic routing;
-- missing prerequisites have explicit stop behavior;
-- partial/unknown/contradictory evidence cannot be silently converted into certainty;
+- every skill has deterministic input and output destinations;
+- feature-local versus project-wide scope is explicit;
+- read-only execution still has a deterministic persistence handoff;
+- missing prerequisites, partial evidence, conflicts, and blocking unknowns have explicit branch semantics;
+- implementation-time design changes reopen the gate instead of rewriting approved design post hoc;
 - skill completion cannot independently advance queue/state/lifecycle metadata;
-- issues #4 and #5 can reuse the same path vocabulary without defining competing filenames;
-- issue #9 and #11 semantics remain explicitly separate and unweakened.
+- agent, command, and skill layers can share the same path vocabulary;
+- #9 and #11 remain separate and unweakened.

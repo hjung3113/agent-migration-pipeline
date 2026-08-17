@@ -5,6 +5,27 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #17 Superpowers pinning design merged; implementation still gated
+
+Issue #17 was re-checked against current `main`. The original floating-branch
+defect had already been partially addressed by pinning release tag `v6.3.0`,
+so the stale issue text was not applied literally. Adversarial review found two
+remaining gaps: Git tags are movable, and `scripts/validate_scaffold.py` does
+not enforce the pinning invariant it is cited to validate.
+
+PR #47 rewrites the Superpowers policy in `docs/06-tooling-decisions.md` and
+OQ-024 in `docs/05-open-questions.md`. The approved reproducibility boundary is
+the immutable commit `b36e0829c6d0140e93cfef2ca599b1b07d4a7797`, resolved
+from annotated tag `v6.3.0`; the tag remains human-readable release metadata.
+The design also defines explicit upgrade/rollback behavior and a future
+fail-closed validator rule requiring a full 40-character commit SHA.
+
+No `opencode.json` or validator implementation was merged because Issue #17 is
+Medium and AGENTS.md rule 13 keeps implementation behind explicit user
+authorization. The exact implementation steps and positive/negative validation
+cases are recorded on Issue #17. PR #47 merged as
+`a995f16c8f70d6b8bc06057eed0b329d1d761a21`.
+
 ## 2026-08-18 — Issue #11 judge self-check design merged; implementation still gated
 
 Issue #11 was verified against the current parity-verification skill and

@@ -5,6 +5,35 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #6 skill execution-contract design completed, implementation still gated
+
+Issue #6 (skill procedures lack deterministic input/output paths and branch
+conditions) was adversarially reviewed as a design-only task against the
+current repository state, including Issue #4's agent procedure contract,
+Issue #5's command contract, Issue #7's routing design, Issue #9's
+evidence-grade transition design, and Issue #10's observed/inferred
+provenance contract.
+
+The canonical design is now `docs/10-skill-execution-contract.md`. Routing and
+execution are deliberately separated: `docs/09-agent-skill-routing.md` decides
+which role/skill owns the next artifact, while the Issue #6 contract defines
+what the selected skill reads, where its result belongs, how missing/partial/
+conflicting evidence branches, and who persists the result.
+
+Skills define deterministic canonical destinations and BLOCKED/PARTIAL branch
+semantics. Read-only specialist agents return complete artifact bodies to
+`migration-coordinator`, which persists them at those destinations. Skills do
+not independently mutate `migration/STATE.md`, `migration/QUEUE.md`, or feature
+lifecycle metadata. Feature-local versus project-wide DLL/evidence routing is
+explicit, and implementation-time material deviations reopen the design gate
+instead of rewriting an approved design after the fact.
+
+The later Issue #6 implementation must preserve Issue #5 command ownership,
+Issue #7 routing ownership, Issue #9 grade-transition rules, Issue #10
+provenance semantics, and Issue #11 judge self-check requirements. No
+`.opencode/skills/*/SKILL.md` or migration application code was changed in
+this design pass.
+
 ## 2026-08-18 — Issue #5 command contract designed, implementation still gated
 
 Issue #5 (`.opencode/commands/*.md` deterministic execution contract) was

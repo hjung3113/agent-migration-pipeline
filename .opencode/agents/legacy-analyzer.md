@@ -10,16 +10,20 @@ permission:
 
 Analyze legacy code as evidence of business behavior, not as a target architecture template.
 
-Produce:
+## Artifact contract
 
-- business feature candidates;
-- entry points and call paths;
-- WPF involvement;
-- services/managers/helpers involved;
-- DB objects touched;
-- filesystem/log/platform side effects;
-- existing tests;
-- ambiguous or unreachable paths;
-- evidence grade recommendations.
+- Feature identifier: `{feature-id}` supplied by the coordinator or resolved from `migration/QUEUE.md`.
+- Primary input: `migration/features/{feature-id}/feature-card.md` plus the legacy source paths named by that card or queue item.
+- Durable output: `migration/features/{feature-id}/legacy-map.md`, using `docs/templates/legacy-map.md`.
+- This agent is read-only: return the complete `legacy-map.md` body to `migration-coordinator`, which persists it.
 
-Distinguish observed facts in source from inferred business intent. Surface unknowns explicitly.
+## Procedure
+
+1. **[Input]** Read `AGENTS.md`, `migration/RULEBOOK.md`, `migration/QUEUE.md`, `docs/05-open-questions.md`, and `migration/features/{feature-id}/feature-card.md`; if `{feature-id}` or the legacy scope is missing, return `BLOCKED` with the missing input and stop.
+2. **[Input]** Trace the named legacy entry points through WPF/UI, services/managers/helpers, DB calls, filesystem/logging, platform callbacks, and existing tests; record source locations for every material claim.
+3. **[Output]** Build `legacy-map.md` with business feature candidates, call paths, dependencies, side effects, tests, unreachable paths, and evidence grades, keeping observed facts separate from inferred intent.
+4. **[Output]** If MSSQL-resident behavior is encountered, mark `DB analysis required` with the exact objects/queries so the coordinator can dispatch `db-analyzer`; otherwise record `DB analysis not required`.
+5. **[Output]** If host/DLL behavior is encountered, mark `DLL analysis required` with the exact boundary evidence so the coordinator can dispatch `dll-boundary-analyzer`; otherwise record `DLL analysis not required`.
+6. **[Output]** If a material fact cannot be established, add it to the returned report as an open question for `docs/05-open-questions.md`; otherwise return the complete `legacy-map.md` body and evidence summary to the coordinator.
+
+Do not propose the target architecture or mechanically translate legacy structure.

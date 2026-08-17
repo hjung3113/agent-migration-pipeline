@@ -22,7 +22,7 @@ Status: DRAFT — update only through explicit design/review decisions.
 8. Allow floating-point tolerance for analytical results only when the legacy implementation already has numeric tolerance, and only at a tolerance the contract states explicitly and justifies against the legacy value.
 9. Normalize timestamps/timezones only when representation differs and semantics are unchanged.
 10. Use order-insensitive comparison only when order is not part of the behavior contract.
-11. Put every normalization rule in the behavior contract or Rulebook; do not hide it in a test helper.
+11. Comparison semantics are specification, not test implementation. Every feature-specific exact/tolerance/normalization/order rule must be declared in that feature's `behavior-contract.md` `## Comparison semantics`; a reusable cross-feature rule may live in this Rulebook only when the feature contract cites the applicable Rulebook rule explicitly. A test/helper may implement a declared rule, but must not invent, relax, or silently override comparison semantics. A missing, placeholder-only, empty, ambiguous, or helper-only comparison rule blocks parity verification rather than defaulting to equality or permissive normalization.
 
 ## Platform / DLL
 

@@ -21,9 +21,12 @@ Potential judge inputs:
 
 Rules:
 
-1. define comparison semantics before comparing;
-2. validate the judge by detecting a controlled mismatch where practical;
-3. report mismatches rather than normalizing them away;
-4. use PASS, FAIL, PARTIAL, or BLOCKED;
-5. list unverified behavior explicitly;
-6. if failures repeat across features, recommend a Rulebook/Skill/process change.
+1. before comparing, resolve every material comparison to the feature's `behavior-contract.md` `## Comparison semantics` or to an explicit Rulebook rule referenced by that section;
+2. feature-specific exact/tolerance/normalization/order semantics must be declared in the behavior contract; do not introduce them directly in test, fixture, adapter, snapshot, or helper code;
+3. if the behavior contract is missing, its comparison section is absent/empty/placeholder-only for material behavior, or a required comparison rule is absent/ambiguous, stop with `BLOCKED` until the contract is updated — never infer a default from test code;
+4. a test/helper may implement only the declared comparison rule and must not relax, broaden, or silently override it; record the originating contract comparison row/subject or Rulebook reference in the verification report;
+5. validate the judge by detecting a controlled mismatch where practical;
+6. report mismatches under the declared semantics rather than normalizing them away;
+7. use PASS, FAIL, PARTIAL, or BLOCKED;
+8. list unverified behavior and comparison-specification gaps explicitly;
+9. if failures repeat across features, recommend a Rulebook/Skill/process change.

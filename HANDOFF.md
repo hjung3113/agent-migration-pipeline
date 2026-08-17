@@ -5,6 +5,30 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #5 command contract designed, implementation still gated
+
+Issue #5 (`.opencode/commands/*.md` deterministic execution contract) was
+reviewed adversarially as a design-only task. The literal issue suggestion
+(`Arguments`/`Output`/`Preconditions`/`State updates` in seven files) is not
+sufficient by itself because discovery and status have different argument
+shapes, a feature ID cannot identify a queue row deterministically, broad
+queue rows must not be completed by one feature run, and feature-local
+blocking must not automatically become project-level blocking.
+
+The canonical design is `docs/09-command-execution-contract.md`, linked from
+`docs/02-migration-pipeline.md`. Key decisions: mutating commands select an
+explicit queue item; feature lifecycle commands use a canonical feature ID;
+malformed arguments cause zero durable writes; feature/queue/project state
+have separate ownership; status is read-only; and phase failures stop rather
+than infer missing artifacts or gates.
+
+Implementation is intentionally not included. Before all seven command files
+are changed together, issue #5 must be reconciled with issue #1 feature
+metadata, issue #3 phase-gate checklists, issue #4 agent contracts (open PR
+#25), and issue #15 artifact filenames. In particular, merged design currently
+uses `verification.md` while the existing template and PR #25 use
+`verification-report.md`; command implementation must not silently choose one.
+
 ## 2026-08-18 — Issue #1 design completed, implementation still gated
 
 Issue #1 (`validate_scaffold.py` feature artifact enforcement) was reviewed

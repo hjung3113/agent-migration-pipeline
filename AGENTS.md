@@ -22,6 +22,57 @@ The legacy component is currently invoked by an external company platform as a D
 12. Persist queue, decisions, evidence, and unresolved items on disk so another session can resume without relying on chat history.
 13. **Design gate: no implementation until the user explicitly says design is done and to start building.** For any slice with lock-in risk medium or higher, produce the design artifact first (ADR / RULEBOOK amendment / behavior contract) and stop — do not dispatch implementation in the same pass, and do not let an implementer resolve an undecided design point on the spot. Wait for an explicit go-ahead from the user before writing code against it.
 
+## Engineering execution principles
+
+Apply these together with the migration rules above. The Karpathy-inspired principles are adapted from `duolahypercho/andrej-karpathy-skills` and are intentionally phrased for this repository.
+
+### YAGNI (You Aren't Gonna Need It)
+
+Implement only what is required by the current verified migration scope.
+
+- Do not add speculative features, extension points, configuration, compatibility layers, or abstractions for hypothetical future needs.
+- Do not preserve a legacy structure merely because it might become useful later.
+- Add complexity only when a current behavior contract, integration constraint, or verified requirement justifies it.
+- Prefer deleting an unnecessary design idea over carrying it forward as dormant flexibility.
+
+### 1. Think before coding
+
+Make the task and its evidence explicit before changing code.
+
+- Surface assumptions that could change behavior or architecture.
+- Identify meaningful tradeoffs when more than one approach is valid.
+- Do not silently resolve ambiguous business semantics, DLL behavior, data behavior, or security requirements.
+- When ambiguity is material, record it as an open question and follow the repository stop conditions and design gate.
+
+### 2. Simplicity first
+
+Choose the smallest design and implementation that satisfies the verified requirement.
+
+- Prefer direct code over architecture introduced for a single use case.
+- Do not add dependencies when the repository can express the required behavior simply without them.
+- Do not introduce configurability or generalization without an active requirement.
+- If a solution is becoming framework-like, check whether a narrower solution meets the same contract.
+
+### 3. Surgical changes
+
+Keep every change tied to the requested migration scope.
+
+- Touch only files needed for the task.
+- Do not mix unrelated refactors, formatting sweeps, renames, or cleanup into the change.
+- Preserve local conventions unless the task explicitly changes them.
+- Remove imports, variables, helpers, or artifacts made obsolete by the change itself.
+- Report unrelated defects separately instead of expanding the patch opportunistically.
+
+### 4. Goal-driven verification
+
+Define the observable success condition before declaring work complete.
+
+- Bug fix: identify the failing case and expected corrected behavior.
+- Feature migration: identify the legacy behavior or approved target behavior that must be observable.
+- Refactor: identify the behavior and data guarantees that must remain unchanged.
+- Review: identify concrete risks, regressions, missing evidence, and missing tests.
+- Use the narrowest meaningful verification that proves the goal; if verification cannot be run, state the gap explicitly and do not imply success.
+
 ## Required artifacts per feature
 
 Before implementation:

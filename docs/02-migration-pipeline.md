@@ -22,6 +22,14 @@ The lifecycle `stage` and `blocked` state are separate. Required artifacts are c
 
 `validate_scaffold.py` is the structural guard for this contract. A-1 validates deterministic metadata and artifact existence only; body/heading semantics remain a later validation layer.
 
+## Command entrypoint contract
+
+The seven `.opencode/commands/migration-*.md` files are phase entrypoints, not informal prompts. Their argument grammar, durable inputs/outputs, queue selection, state ownership, preconditions, and failure behavior are defined by `docs/10-command-execution-contract.md`.
+
+Command implementations must not infer a queue row or feature from chat context, must not advance a phase when a required artifact/gate is missing, and must keep feature-local blocking separate from project-level blocking. Canonical artifact paths come from the feature-artifact contract and the merged issue #4 agent contracts rather than being chosen independently inside each command.
+
+Issue #5 command implementation remains gated on design approval and must be reconciled with issue #1 feature metadata, issue #3 phase-gate checklists, and issue #15's remaining artifact/template filename mismatch.
+
 ## Agent/skill routing contract
 
 The coordinator selects roles by **current phase + required primary artifact**, using `docs/09-agent-skill-routing.md` as the canonical routing design.

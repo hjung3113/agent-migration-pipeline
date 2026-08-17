@@ -54,6 +54,12 @@ Skills are selected by the artifact they produce, not by overlapping vocabulary:
 
 These skills may be composed in that workflow. For example, contract authoring may grade claims and separately register unanswered questions. `docs/09-agent-skill-routing.md` defines the deterministic tie-break algorithm.
 
+## Skill execution contract
+
+Routing decides **which** skill owns the next artifact; execution rules decide **how** that selected skill reads, writes, branches, and hands off persistence. The canonical execution contract is `docs/10-skill-execution-contract.md`.
+
+Skills declare deterministic input/output paths and BLOCKED/PARTIAL branches. Read-only specialist agents return complete artifact bodies to `migration-coordinator`, which persists them at the canonical destination. Skills do not independently advance `migration/STATE.md`, `migration/QUEUE.md`, or feature lifecycle metadata.
+
 ## Why OpenCode-native first
 
 OpenCode already provides project-local Agents, Skills, Commands, permissions, and `AGENTS.md`. Starting with these avoids stacking multiple orchestration frameworks that may duplicate context or conflict in agent routing.

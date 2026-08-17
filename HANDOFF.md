@@ -5,6 +5,31 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #15 artifact naming/location contract aligned
+
+Issue #15 was re-checked against current `main`, not implemented from its stale
+snapshot literally. Earlier Issue #1/#4 work had already established
+`feature-card.md`, `legacy-map.md`, `target-feature-design.md`, `review.md`, and
+`verification.md` as durable feature names; the remaining singleton mismatch
+was the verification template still being named `verification-report.md`.
+
+The canonical contract in `docs/08-feature-artifact-validation.md` was rewritten
+adversarially to distinguish singleton feature artifacts from repeatable record
+templates. Singleton template basenames must exactly match durable feature
+basenames, so the verification template is now `docs/templates/verification.md`
+and verifier/parity-verification guidance points to it. Old singleton aliases
+(`feature.md`, `target-design.md`, `verification-report.md`) are explicitly
+non-canonical and should not be accepted as substitutes.
+
+`evidence-record.md` is intentionally not treated as a singleton. Feature-scoped
+records persist under `migration/features/<feature-id>/evidence/<evidence-id>.md`;
+project-wide/reusable records persist under `migration/evidence/<evidence-id>.md`.
+Both migration README files, the evidence template, and evidence-grading skill
+now state this rule so low-reasoning agents do not have to infer placement.
+
+Issue #1's stricter validator/sample normalization remains separate work; this
+change only makes its future required-file/template checks deterministic.
+
 ## 2026-08-18 — Issue #6 skill execution-contract design completed, implementation still gated
 
 Issue #6 was verified against the current skills and reviewed adversarially as

@@ -3,7 +3,27 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-17
+Last updated: 2026-08-18
+
+## 2026-08-18 — Issue #1 design completed, implementation still gated
+
+Issue #1 (`validate_scaffold.py` feature artifact enforcement) was reviewed
+adversarially as a design-only task. The issue's literal filename/status
+proposal conflicts with the repository's current templates and
+`synthetic-demo`, so implementation must not copy the issue example as-is.
+
+The canonical design is now `docs/08-feature-artifact-validation.md` and
+`migration/features/README.md`. Key decisions: canonical filenames use
+`feature-card.md` / `target-feature-design.md`; lifecycle `stage` is separate
+from boolean `blocked`; `feature-card.md` frontmatter becomes the
+machine-readable lifecycle contract; required documents are cumulative by
+stage; A-1 checks structure/existence only; `synthetic-demo` must be
+normalized rather than exempted; CI already calls the validator, while
+`/migration-status` still needs explicit integration.
+
+No validator/template/sample implementation was changed. Implementation
+remains a separate follow-up after this design has been accepted under
+AGENTS.md rule 13.
 
 ## State — process reset, redo pending
 

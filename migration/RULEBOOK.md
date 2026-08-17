@@ -76,6 +76,9 @@ Status: DRAFT — update only through explicit design/review decisions.
 11. Live MSSQL inspection must use the bounded read-only evidence path in `docs/issue-18-mssql-readonly-inspection.md`: consume the canonical `mssql-prod-ro` profile, execute only fixed catalog `SELECT` queries, and expose no arbitrary SQL, DDL/DML, `EXEC`, application-row export, or legacy DB-object/job execution path.
 12. Metadata absence is evidence only when inspection completeness for the requested scope is established. Hidden rows, unavailable/encrypted definitions, missing `msdb` visibility, query failures, or uninspected categories remain explicit uncertainty and must not be converted into "object/logic does not exist".
 13. Raw operational DB definitions and job-step text are sensitive evidence. Do not automatically commit raw inspection captures into Git-tracked feature artifacts; persist reviewed migration-relevant facts, completeness status, hashes/source references, and only policy-approved minimal excerpts.
+14. Production databases are read-only evidence sources for repository-owned migration/verification tooling. State-changing DB actions must pass the attested test-write boundary in `docs/12-db-execution-safety-contract.md`; wrapping a production mutation in a transaction/rollback does not make it safe.
+15. DB profile labels or SQL keyword matching are not write authorization. The guard consumes Issue #23's canonical profiles and grants write capability only to an attested `test + read-write` target whose actual server/database identity matches approved expected-target metadata.
+16. Database/server least privilege and environment network separation are primary controls. Repository code guards are defense in depth and must fail closed on unknown, ambiguous, or mismatched targets and must not expose a routine production-write bypass.
 
 ## Agent workflow
 

@@ -5,6 +5,29 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #5 command contract designed, implementation still gated
+
+Issue #5 (`.opencode/commands/*.md` deterministic execution contract) was
+reviewed adversarially as a design-only task. Adding the same generic sections
+to all seven commands is insufficient because discovery and status have
+different invocation shapes, a feature ID cannot identify a queue row, broad
+queue items must not be completed by one feature run, and feature-local
+blocking must not automatically become project-level blocking.
+
+The canonical design is `docs/10-command-execution-contract.md`, linked from
+`docs/02-migration-pipeline.md`. Mutating commands select an explicit queue
+item; lifecycle commands use canonical feature IDs; malformed arguments cause
+zero durable writes; feature/queue/project state have separate ownership; and
+`migration-status` is explicitly read-only.
+
+Issue #4/PR #25 is now merged and is the agent input/output baseline. Command
+implementation is intentionally not included and remains gated on explicit
+approval plus reconciliation with issue #1 feature metadata, issue #3 phase
+gates, and issue #15's remaining template mismatch. The merged canonical
+verification artifact is `verification.md`; `docs/templates/verification-report.md`
+remains a separate issue #15 inconsistency and must not silently redefine the
+command output path.
+
 ## 2026-08-18 — Issue #9 evidence-grade transition design completed, implementation still gated
 
 Issue #9 (silent evidence-grade promotion) was reviewed adversarially as a

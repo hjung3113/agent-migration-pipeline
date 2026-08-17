@@ -17,14 +17,16 @@ A criterion is `PASS` only when all of the following are true:
 
 Gate criteria live only in this document. Feature artifacts store criterion IDs, results, and evidence references; they do not redefine the criteria.
 
-When any criterion fails:
+When any criterion fails, first classify the cause and then apply the STOP/persistence contract in `docs/11-stop-condition-contract.md`:
 
-1. reuse an existing matching item in `docs/05-open-questions.md`, or add a new one if the unknown is not already tracked;
-2. set `migration/STATE.md` `Status` to `BLOCKED — <Gate ID>: <failed criterion IDs>` and record the evidence or missing artifact;
-3. for feature-level G2/G3 failures, set that feature's `feature-card.md` `blocked: true` without changing its lifecycle `stage`, and update the affected queue/feature artifact;
-4. stop the phase-advancing command. Do not delegate work from the next phase.
+1. record the gate as `BLOCKED` and stop the phase-advancing command; do not delegate work from the next phase;
+2. if the failure is an actual unresolved fact, reuse an existing matching item in `docs/05-open-questions.md` or add a new one only when the unknown is not already tracked;
+3. if the failure is a missing artifact/prerequisite, reference the missing dependency/queue work instead of inventing an open question unless an unanswered fact actually exists;
+4. if the failure is an approval gate such as G3.5, persist the approval state/source in the referenced artifact and do not create an open question merely because authorization has not yet been given;
+5. for feature-level G2/G3 failures, set that feature's `feature-card.md` `blocked: true` without changing its lifecycle `stage`, and set the affected feature/queue work item to `BLOCKED` with the failed criterion/dependency reference;
+6. update `migration/STATE.md` to project-level `BLOCKED` only when the failed gate blocks the project-level phase/next gate or no actionable work remains at the current gate; a single feature-local failure must not automatically mark the whole project blocked.
 
-Human input resolves source facts or approvals; it does not bypass a false criterion. If approval arrives in chat, persist that approval in the referenced artifact before re-evaluating the gate.
+Human input resolves source facts or supplies approvals; it does not bypass a false criterion. If approval arrives in chat, persist that approval in the referenced artifact before re-evaluating the gate.
 
 ## Phase 0 — Environment and feasibility
 
@@ -88,6 +90,8 @@ The coordinator selects roles by **current phase + required primary artifact**, 
 | parity verification | `verifier` | `parity-verification` owns the verification report/verdict |
 
 Specialists do not directly absorb adjacent-domain work. They return a routing/escalation packet to `migration-coordinator`. STOP applies only when the current gate cannot safely advance; non-blocking unknowns are persisted while unaffected work may continue.
+
+The seven canonical unknown classes remain policy in `AGENTS.md`. `docs/11-stop-condition-contract.md` defines their local publication into agent context, the common specialist STOP payload, and the coordinator-owned file-level persistence actions. Gate criterion definitions remain authoritative in this document; STOP handling must not copy or redefine them.
 
 ## Phase 1 — Legacy discovery
 

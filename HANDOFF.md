@@ -5,6 +5,32 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #13 STOP contract designed, implementation still gated
+
+Issue #13 was reviewed against the current agent permission model, issue #1
+feature lifecycle contract, issue #7 routing/escalation design, issue #8
+role-boundary design, and the current phase-gate failure protocol. The issue's
+failure mode is valid, but its literal file-action recommendation would break
+the current architecture: read-only specialists cannot edit shared process
+files, lifecycle `blocked` is separate from `stage`, and a feature-local
+blocker must not automatically become a project-wide blocked state.
+
+The canonical design is now `docs/11-stop-condition-contract.md`, linked from
+`docs/01-architecture.md` and reconciled with `docs/02-migration-pipeline.md`.
+`AGENTS.md` remains the source of truth for the seven conditions; later
+implementation should give them stable IDs and generate a managed local
+`## Stop conditions` block into all eight agent definitions, with CI/check
+tooling rejecting drift. Specialists return a common STOP payload;
+`migration-coordinator` reuses/allocates open-question IDs, retains feature
+stage while setting `blocked: true` only when appropriate, blocks the affected
+queue item, and updates `migration/STATE.md` only for project-level/current-gate
+impact. Gate failures caused only by missing artifacts or pending approval do
+not manufacture open questions.
+
+No `.opencode/agents`, `AGENTS.md`, sync script, or validator implementation was
+changed. Those concrete changes remain gated by AGENTS.md rule 13 and are
+listed in the issue #13 design's implementation/acceptance sections.
+
 ## 2026-08-18 — Issue #2 artifact-schema design completed, implementation still gated
 
 Issue #2 (enum/ID/reference validation) was reviewed adversarially as a

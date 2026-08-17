@@ -43,6 +43,8 @@ The architectural invariant is that `migration-coordinator` owns cross-role disp
 
 Unknowns do not automatically mean STOP. They are persisted and escalated; the current gate stops only when proceeding would require invented behavior, violate an approval/design gate, or make verification invalid.
 
+The canonical STOP trigger, specialist return payload, coordinator file-level persistence actions, and drift-free publication of `AGENTS.md` stop conditions into each agent definition are defined in `docs/11-stop-condition-contract.md`. Shared blocker/queue/state writes remain coordinator-owned; agent-local copies exist for prompt-time visibility, not as independent policy sources.
+
 ## Skill ownership model
 
 Skills are selected by the artifact they produce, not by overlapping vocabulary:

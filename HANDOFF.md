@@ -8,25 +8,34 @@ Last updated: 2026-08-18
 ## 2026-08-18 — Issue #6 skill execution-contract design completed, implementation still gated
 
 Issue #6 (skill procedures lack deterministic input/output paths and branch
-conditions) was adversarially reviewed as a design-only task.
+conditions) was adversarially reviewed as a design-only task against the
+current `main`, including the merged issue #4 agent procedure work.
 
 The canonical design is now `docs/09-skill-execution-contract.md`. The key
-decision is not to copy path rules independently into nine skills. Instead,
-all agent/command/skill implementations must consume one shared path
-vocabulary derived from `docs/08-feature-artifact-validation.md`.
+decision is not to copy independent path rules into nine skills. Instead,
+agent/command/skill implementations must consume one shared path vocabulary
+derived from `docs/08-feature-artifact-validation.md`.
 
-Skill responsibilities are now separated from orchestration state: skills own
-their domain artifacts and explicit BLOCKED/PARTIAL branches; commands own
-invocation/precondition handling; the coordinator owns `migration/STATE.md`,
-`migration/QUEUE.md`, and lifecycle-stage transitions. Feature-local and
-project-wide evidence/unknown routing is defined explicitly, including a
-project-level DLL boundary report.
+Skills define reusable procedures, canonical destinations, and explicit
+BLOCKED/PARTIAL branches. Read-only specialist agents return complete
+artifact bodies to `migration-coordinator`, which persists them at those
+canonical paths. Commands own invocation/precondition handling; the
+coordinator owns `migration/STATE.md`, `migration/QUEUE.md`, feature lifecycle
+transitions, and blocker persistence.
 
-The design intentionally does not implement `.opencode/skills/*/SKILL.md` or
-absorb issue #9 (evidence grade history), #11 (judge self-check), #4 (agent
-procedures), #5 (command procedures), or #15 (missing supporting templates).
-Those later implementations must reuse this routing contract rather than
-define competing filenames.
+The design also prevents implementation-time discoveries from silently
+rewriting an approved target design: a material deviation reopens the design
+gate. DLL-boundary outputs are routed deterministically for both feature-local
+and project-wide scopes.
+
+Issue #4 is already implemented on `main` and establishes the persistence
+permission pattern this design adopts. Issue #5 remains a separate command
+contract. Issue #15's original missing `legacy-map.md`/`review.md` template
+finding is now partially stale because issue #4 added those templates.
+Issue #9 (evidence grade history) and #11 (judge self-check) remain separate
+and must not be weakened by the issue #6 implementation.
+
+No `.opencode/skills/*/SKILL.md` or application code was changed in this pass.
 
 ## 2026-08-18 — Issue #1 design completed, implementation still gated
 

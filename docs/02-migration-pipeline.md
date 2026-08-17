@@ -14,6 +14,14 @@ Outputs:
 
 Gate: do not start broad implementation until the host/DLL boundary and minimum observable outputs are understood well enough to evaluate results.
 
+## Feature artifact gate contract
+
+Each migration feature must persist its lifecycle metadata and canonical artifacts under `migration/features/<feature-id>/` according to `docs/08-feature-artifact-validation.md`.
+
+The lifecycle `stage` and `blocked` state are separate. Required artifacts are cumulative by stage, so a blocked feature retains the obligations of the stage it reached.
+
+`validate_scaffold.py` is the structural guard for this contract. A-1 validates deterministic metadata and artifact existence only; body/heading semantics remain a later validation layer.
+
 ## Phase 1 — Legacy discovery
 
 For each candidate business area:

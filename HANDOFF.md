@@ -5,6 +5,29 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #6 skill execution-contract design completed, implementation still gated
+
+Issue #6 (skill procedures lack deterministic input/output paths and branch
+conditions) was adversarially reviewed as a design-only task.
+
+The canonical design is now `docs/09-skill-execution-contract.md`. The key
+decision is not to copy path rules independently into nine skills. Instead,
+all agent/command/skill implementations must consume one shared path
+vocabulary derived from `docs/08-feature-artifact-validation.md`.
+
+Skill responsibilities are now separated from orchestration state: skills own
+their domain artifacts and explicit BLOCKED/PARTIAL branches; commands own
+invocation/precondition handling; the coordinator owns `migration/STATE.md`,
+`migration/QUEUE.md`, and lifecycle-stage transitions. Feature-local and
+project-wide evidence/unknown routing is defined explicitly, including a
+project-level DLL boundary report.
+
+The design intentionally does not implement `.opencode/skills/*/SKILL.md` or
+absorb issue #9 (evidence grade history), #11 (judge self-check), #4 (agent
+procedures), #5 (command procedures), or #15 (missing supporting templates).
+Those later implementations must reuse this routing contract rather than
+define competing filenames.
+
 ## 2026-08-18 — Issue #1 design completed, implementation still gated
 
 Issue #1 (`validate_scaffold.py` feature artifact enforcement) was reviewed

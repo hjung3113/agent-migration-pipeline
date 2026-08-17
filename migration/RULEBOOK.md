@@ -79,6 +79,11 @@ Status: DRAFT — update only through explicit design/review decisions.
 14. Production databases are read-only evidence sources for repository-owned migration/verification tooling. State-changing DB actions must pass the attested test-write boundary in `docs/12-db-execution-safety-contract.md`; wrapping a production mutation in a transaction/rollback does not make it safe.
 15. DB profile labels or SQL keyword matching are not write authorization. The guard consumes Issue #23's canonical profiles and grants write capability only to an attested `test + read-write` target whose actual server/database identity matches approved expected-target metadata.
 16. Database/server least privilege and environment network separation are primary controls. Repository code guards are defense in depth and must fail closed on unknown, ambiguous, or mismatched targets and must not expose a routine production-write bypass.
+17. Target PostgreSQL schema history is canonical only in Alembic revisions under `target/backend/alembic/versions/`; do not maintain a parallel raw-SQL migration history.
+18. Every PostgreSQL schema-changing feature must declare its Alembic revision, clean test-DB bootstrap requirement, canonical connection profile, seed/fixture identity, and DB verification evidence in its target design.
+19. PostgreSQL reset/migration DDL must use canonical `postgres-test-rw` resolution plus the attested test-write capability from `docs/12-db-execution-safety-contract.md`. Raw connection inputs, direct-driver bypass, general `DATABASE_URL`, manual DDL, or a bootstrap-specific authorization path are not valid substitutes.
+20. Target test seed state must be explicit, deterministic, and version-controlled. Ambient rows in a persistent/shared database are not valid feature or parity evidence.
+21. When PostgreSQL state is a required parity source, verification starts from the canonical guarded clean bootstrap at the recorded unique Alembic head; manual DDL or an unidentified/dirty/guard-bypassed target blocks that source.
 
 ## Agent workflow
 

@@ -73,7 +73,7 @@ blocked: false
 
 Allowed `stage` values are `discovered | specified | designed | implementing | reviewing | verifying | done`.
 
-`blocked` is an independent boolean and does not alter the stage. The directory name and `id` must match. Unknown stages, malformed booleans, duplicate keys, missing metadata, or an ID mismatch are validation errors.
+`blocked` is an independent boolean and does not alter the stage. The directory name and `id` must match. Unknown stages, malformed booleans, duplicate keys, missing metadata, or an ID mismatch are validation errors. `stage: done` with `blocked: true` is also invalid because completed and currently blocked are mutually exclusive repository states.
 
 The validator must not infer stage from prose such as `Status: done (...)`.
 
@@ -100,7 +100,7 @@ The required set is cumulative:
 1. enumerate immediate child directories under `migration/features/`;
 2. validate each feature directory name;
 3. require and parse `feature-card.md` frontmatter;
-4. validate `id`, `stage`, and `blocked`;
+4. validate `id`, `stage`, and `blocked` including the `done`/`blocked` invariant;
 5. compute the cumulative required file set from `stage`;
 6. report every missing file for every feature in one run;
 7. preserve all existing scaffold checks.
@@ -126,7 +126,7 @@ No CI workflow change is required because the existing scaffold step already inv
 
 ## Test requirements
 
-Implementation tests should cover: no feature directories; valid metadata; invalid directory name; missing `feature-card.md`; ID mismatch; unknown stage; malformed `blocked`; every stage's cumulative requirements; blocked features retaining stage requirements; optional extra files; multiple failures reported together; and normalized `synthetic-demo` passing as `done`.
+Implementation tests should cover: no feature directories; valid metadata; invalid directory name; missing `feature-card.md`; ID mismatch; unknown stage; malformed `blocked`; invalid `done` + `blocked: true`; every stage's cumulative requirements; blocked features retaining stage requirements; optional extra files; multiple failures reported together; and normalized `synthetic-demo` passing as `done`.
 
 ## Non-goals for A-1
 

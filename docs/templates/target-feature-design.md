@@ -45,6 +45,26 @@ Every behavior-contract rule with `Implementation impact = yes` must appear exac
 
 ## Legacy structures intentionally not carried forward
 
+Use `docs/13-legacy-structure-rejection-contract.md`. Every canonical LSR ID must be dispositioned; add more rows when the feature contains multiple material candidates in one category.
+
+| LSR ID | Legacy structure / carryover candidate | Disposition | Target replacement / isolation | Requirement / evidence reference | Rationale |
+|---|---|---|---|---|---|
+| LSR-01 | | REJECTED / RETAINED-JUSTIFIED / NOT-APPLICABLE / BLOCKED | | | |
+| LSR-02 | | REJECTED / RETAINED-JUSTIFIED / NOT-APPLICABLE / BLOCKED | | | |
+| LSR-03 | | REJECTED / RETAINED-JUSTIFIED / NOT-APPLICABLE / BLOCKED | | | |
+| LSR-04 | | REJECTED / RETAINED-JUSTIFIED / NOT-APPLICABLE / BLOCKED | | | |
+| LSR-05 | | REJECTED / RETAINED-JUSTIFIED / NOT-APPLICABLE / BLOCKED | | | |
+| LSR-06 | | REJECTED / RETAINED-JUSTIFIED / NOT-APPLICABLE / BLOCKED | | | |
+| LSR-07 | | REJECTED / RETAINED-JUSTIFIED / NOT-APPLICABLE / BLOCKED | | | |
+
+Rules:
+
+- `RETAINED-JUSTIFIED` requires a durable behavior/data/platform/rollout evidence reference.
+- `REJECTED` names the target replacement or isolation boundary.
+- `NOT-APPLICABLE` must still cite evidence that the category does not occur in the inspected feature.
+- `BLOCKED` must link to a real unresolved fact/open question when applicable.
+- Bare `N/A`, `same as legacy`, `for compatibility`, and `for safety` are not valid rationales.
+
 ## Open questions / assumptions
 
 | Question / OQ ID | Blocks implementation? | Status | Evidence / resolution |
@@ -61,7 +81,7 @@ Every behavior-contract rule with `Implementation impact = yes` must appear exac
 - Legacy-structure rejection evidence:
 - Notes:
 
-This is the coordinator-owned pre-implementation consistency review required by G3.4. It does not replace the post-implementation independent `adversarial-reviewer` report.
+This is the coordinator-owned pre-implementation consistency review required by G3.4. `Legacy-structure rejection evidence` must point to the completed LSR disposition table and supporting evidence, not a generic statement. It does not replace the post-implementation independent `adversarial-reviewer` report.
 
 ## Implementation authorization
 

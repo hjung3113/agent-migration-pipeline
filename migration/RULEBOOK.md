@@ -10,6 +10,18 @@ Status: DRAFT — update only through explicit design/review decisions.
 4. Do not preserve a legacy pattern solely because it exists.
 5. Do not intentionally change confirmed behavior without an explicit decision record.
 
+## Legacy structure rejection
+
+1. `docs/13-legacy-structure-rejection-contract.md` is the canonical operational contract for deciding whether legacy technical structure may appear in the target.
+2. Legacy technical similarity is permitted only when an approved behavior rule, verified data-integrity constraint, verified external/platform contract, or verified rollout constraint requires it.
+3. Do not map WPF screen/ViewModel/code-behind boundaries 1:1 to React pages/components/state/hooks.
+4. Do not map C# class/service/manager/repository/inheritance boundaries 1:1 to FastAPI routers/services/modules/repositories.
+5. Do not reproduce WPF event/Dispatcher/callback/lifecycle chains as equivalent frontend/backend handler chains unless observable ordering/lifecycle semantics require them.
+6. Do not replicate MSSQL table/column/view/procedure/trigger organization into PostgreSQL by default; preserve required data semantics and integrity, not incidental object layout.
+7. Do not derive one HTTP endpoint per legacy method/stored procedure or copy legacy DTO/entity shapes into public API/domain models without a current contract reason.
+8. Host/DLL/WPF integration concerns belong behind the platform adapter and must not leak into core business logic.
+9. A target design must disposition each applicable carryover candidate as `REJECTED`, `RETAINED-JUSTIFIED`, `NOT-APPLICABLE`, or `BLOCKED`; retention requires durable evidence.
+
 ## Evidence
 
 1. Important business rules must have an evidence grade.

@@ -6,9 +6,9 @@ compatibility: OpenCode project skill
 
 # Target Feature Design
 
-Use `docs/templates/target-feature-design.md`.
+Use `docs/templates/target-feature-design.md` and the canonical structural rejection rules in `docs/13-legacy-structure-rejection-contract.md`.
 
-Design from behavior intent, not legacy file structure.
+Design from behavior intent, not legacy file/class/object structure.
 
 Cover:
 
@@ -20,6 +20,8 @@ Cover:
 - errors and observability;
 - test/verification hooks;
 - rollout/compatibility concerns;
-- legacy patterns intentionally removed.
+- a complete LSR-01..LSR-07 legacy-structure disposition.
 
-If a P0 unknown affects the design, mark the relevant part provisional or blocked instead of selecting a convenient assumption.
+Do not default to one React boundary per WPF/ViewModel unit, one backend boundary per C# class/service, one PostgreSQL object per MSSQL object, or one endpoint per legacy operation. Any `RETAINED-JUSTIFIED` legacy-shaped element needs a current durable requirement/evidence reference.
+
+If a material unknown affects the design or a medium/high lock-in carryover disposition, mark the relevant part provisional or blocked instead of selecting a convenient assumption or preserving the legacy shape "for safety".

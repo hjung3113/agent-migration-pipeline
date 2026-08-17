@@ -83,4 +83,4 @@ Chat history is not a source of truth. Durable state belongs in repository files
 
 Artifact routing for reusable skills is defined centrally in `docs/09-skill-execution-contract.md`.
 
-Skills own domain artifact reads/writes; agents own role-specific reasoning; commands own invocation arguments and precondition handling; the migration coordinator owns `STATE.md`, `QUEUE.md`, and feature lifecycle transitions. Agent/command/skill files must consume the same routing vocabulary instead of redefining independent output paths.
+Skills define reusable procedures, canonical destinations, and branch semantics. Agents provide role-specific reasoning; read-only specialists return complete artifact bodies to the migration coordinator for persistence. Commands own invocation arguments and precondition handling. The migration coordinator owns `STATE.md`, `QUEUE.md`, feature lifecycle transitions, and persistence of read-only specialist results. Agent/command/skill files must consume the same routing vocabulary instead of redefining independent output paths.

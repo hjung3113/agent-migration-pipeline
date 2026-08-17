@@ -5,6 +5,33 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #18 MSSQL read-only inspection design merged; implementation still gated
+
+Issue #18 was verified against the current DB analyzer/skill, DB dependency
+report template, Rulebook, scripts, and the newly merged DB connection contract,
+then reviewed adversarially as a design-only task. The core inspection-tool gap
+is real, although the issue's exact `scripts/` inventory is stale.
+
+The canonical design is `docs/issue-18-mssql-readonly-inspection.md`, merged
+through PR #51 as `21efc641958e01797932a7e4de5c1fa090699ae3`. The design
+consumes Issue #23's shared `mssql-prod-ro` profile, exposes only a fixed catalog
+`SELECT` set, and forbids arbitrary SQL, DDL/DML, `EXEC`, DB-object/job execution,
+and application-row export. Catalog, module-definition, SQL Agent job, and
+job-step-text completeness are independent so hidden/unavailable metadata cannot
+be mistaken for absence.
+
+`docs/01-architecture.md`, `migration/RULEBOOK.md`, and
+`docs/templates/db-dependency-report.md` were aligned with the same boundary.
+Raw operational definitions/job commands stay in an approved local/secure
+capture rather than being automatically committed; Git keeps reviewed facts,
+completeness, hashes/references, and only policy-approved minimal excerpts.
+OQ-013 remains OPEN until Phase 1 obtains and analyzes real MSSQL evidence.
+
+No `scripts/db/mssql_inspect.py`, DB driver/helper, `.opencode` agent/skill, or
+live DB implementation was added because AGENTS.md rule 13 still gates
+implementation. The exact later implementation and validation scope is recorded
+on Issue #18.
+
 ## 2026-08-18 — Issue #22 DB snapshot/diff contract designed and merged; implementation still gated
 
 Issue #22 was verified against the actual verifier diagram, evidence strategy,

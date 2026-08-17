@@ -63,3 +63,4 @@ Status: DRAFT — update only through explicit design/review decisions.
 4. Verifier reports uncertainty instead of forcing PASS.
 5. Repeated defects trigger Rulebook/Skill/process review.
 6. Independent adversarial review depth scales with the slice's recorded lock-in risk: medium or higher requires independent review before commit; low-risk slices may skip it only when the rating and rationale are recorded in the queue artifact.
+7. A verifier may not issue a trusted parity verdict until the effective judge configuration passes the mandatory negative-control self-check in `docs/03-evidence-and-verification.md`. A synthetic/framework self-test does not authorize changed adapters, source sets, comparison rules, or environments; failed/unavailable self-checks make verification `BLOCKED`.

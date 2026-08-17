@@ -5,6 +5,29 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #9 evidence-grade transition design completed, implementation still gated
+
+Issue #9 (silent evidence-grade promotion) was reviewed adversarially as a
+design-only task. The issue is valid, but two literal recommendations were
+rejected: forcing every new record to begin at `?`/`D` would fabricate grade
+transitions, and recording only promotions would hide downgrade/reassessment
+history.
+
+The canonical design is now `docs/09-evidence-grade-transition-control.md`.
+Key decisions: the top-level grade is a current snapshot backed by an
+append-only grade-history chain; initial records may start directly at the
+highest grade actually justified by their evidence; every real grade change
+is recorded; promotions require newly referenced evidence plus a reason tied
+to the target-grade criterion; unresolved contradictions block promotion;
+downgrades remain auditable; and the current grade must equal the final
+history row. Static enum/schema validation can share parsing with Issue #2,
+but detecting a promotion is revision-aware and must receive an explicit base
+revision rather than guessing one.
+
+No evidence template, OpenCode skill, validator, CI, or command implementation
+was changed. Those remain a separate follow-up after explicit approval under
+AGENTS.md rule 13.
+
 ## 2026-08-18 — Issue #1 design completed, implementation still gated
 
 Issue #1 (`validate_scaffold.py` feature artifact enforcement) was reviewed

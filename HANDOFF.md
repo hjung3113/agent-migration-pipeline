@@ -5,6 +5,34 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #6 skill execution-contract design completed, implementation still gated
+
+Issue #6 (skill procedures lack deterministic input/output paths and branch
+conditions) was adversarially reviewed as a design-only task against the
+current `main`, including the merged issue #4 agent procedure work and issue
+#9 grade-transition design.
+
+The canonical design is now `docs/10-skill-execution-contract.md`. The key
+decision is not to copy independent path rules into nine skills. Instead,
+agent/command/skill implementations must consume one shared path vocabulary
+derived from `docs/08-feature-artifact-validation.md`.
+
+Skills define reusable procedures, canonical destinations, and explicit
+BLOCKED/PARTIAL branches. Read-only specialist agents return complete artifact
+bodies to `migration-coordinator`, which persists them at those canonical
+paths. Commands own invocation/precondition handling; the coordinator owns
+`migration/STATE.md`, `migration/QUEUE.md`, feature lifecycle transitions, and
+blocker persistence.
+
+The design also prevents implementation-time discoveries from silently
+rewriting an approved target design: a material deviation reopens the design
+gate. DLL-boundary outputs are routed deterministically for both feature-local
+and project-wide scopes. Evidence grading delegates transition mechanics to
+`docs/09-evidence-grade-transition-control.md`; verification judge self-check
+remains governed by issue #11.
+
+No `.opencode/skills/*/SKILL.md` or application code was changed in this pass.
+
 ## 2026-08-18 — Issue #9 evidence-grade transition design completed, implementation still gated
 
 Issue #9 (silent evidence-grade promotion) was reviewed adversarially as a

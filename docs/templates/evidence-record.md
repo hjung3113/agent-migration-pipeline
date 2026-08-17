@@ -1,5 +1,7 @@
 # Evidence: <ID>
 
+> Persistence: use `migration/features/<feature-id>/evidence/<evidence-id>.md` for feature-specific evidence or `migration/evidence/<evidence-id>.md` for project-wide/reusable evidence. This template filename is a schema name, not a required persisted instance filename.
+
 - Feature:
 - Rule/scenario:
 - Grade: A | B | C | D | ?

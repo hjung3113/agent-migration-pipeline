@@ -5,6 +5,33 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #22 DB snapshot/diff contract designed and merged; implementation still gated
+
+Issue #22 was verified against the actual verifier diagram, evidence strategy,
+`DbAssertionPort`, parity-verification skill, and verification template, then
+reviewed adversarially as a design-only task. The missing DB before/after
+capture/diff path is real, but a literal whole-database JSON/CSV diff would be
+an unreliable parity oracle across MSSQL and PostgreSQL and would create new
+safety/data-leak risks.
+
+The canonical design is `docs/issue-22-db-snapshot-diff-contract.md`, merged
+through PR #48 as `f73fe42dfe981ebc80ccdc98b1c804c43a07bbc0`.
+`docs/03-evidence-and-verification.md` and `docs/templates/verification.md`
+were aligned with it. The default parity object is now a feature-scoped logical
+subject's legacy `before -> after` delta versus the target `before -> after`
+delta, with explicit projections, stable keys, parameterized queries, hard row
+bounds, canonical typed JSON, and comparison semantics owned only by the
+behavior contract/Rulebook.
+
+The design also requires fail-closed read-only capture, keeps raw DB row
+snapshots outside Git and out of v1 Markdown rendering, defines unambiguous
+snapshot hashing/pairing, and makes the DB judge negative control a staged
+snapshot/delta mutation rather than a DB mutation. Provisioning/write-safety
+work remains separated under Issues #18-#21. No DB script, driver, judge adapter,
+or `.opencode` implementation was added because AGENTS.md rule 13 still gates
+implementation. The exact follow-up implementation scope is recorded on Issue
+#22, which remains open.
+
 ## 2026-08-18 — Issue #17 Superpowers pinning design merged; implementation still gated
 
 Issue #17 was re-checked against current `main`. The original floating-branch

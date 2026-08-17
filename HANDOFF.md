@@ -5,6 +5,32 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## 2026-08-18 — Issue #13 STOP contract designed and merged; implementation still gated
+
+Issue #13 was checked against the actual eight agent definitions, the current
+permission model, feature lifecycle contract, routing/skill execution
+contracts, and phase-gate failure rules. The reported failure mode is real,
+but the literal recommendation would violate current ownership: read-only
+specialists cannot edit shared state, `blocked` is separate from lifecycle
+`stage`, and a feature-local blocker must not automatically make project state
+BLOCKED.
+
+The canonical design is `docs/11-stop-condition-contract.md`, merged through PR
+#40 and linked from `docs/01-architecture.md`; `docs/02-migration-pipeline.md`
+was reconciled with the same persistence semantics. `AGENTS.md` remains the
+source of truth for the seven STOP conditions. The later implementation should
+assign stable `SC-01..SC-07` IDs, generate a managed local `## Stop conditions`
+block into all eight agent files, and make CI reject missing/drifted copies.
+Specialists return one common STOP payload; `migration-coordinator` owns OQ
+dedup/allocation, safe partial-artifact persistence, feature `blocked`, affected
+queue status, and project-state updates according to blocker scope. Missing
+artifacts or pending approval do not manufacture open questions.
+
+No `.opencode/agents`, `AGENTS.md`, sync script, or validator implementation was
+included in PR #40 because AGENTS.md rule 13 still gates that implementation.
+The concrete later implementation steps are documented in the design and in
+Issue #13's implementation comment.
+
 ## 2026-08-18 — Issue #15 artifact naming/location contract aligned
 
 Issue #15 was re-checked against current `main`, not implemented from its stale

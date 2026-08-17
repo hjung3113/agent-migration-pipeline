@@ -27,6 +27,8 @@ Rules:
 - never infer provenance from grade: C/D claims still need explicit `inferred` marking when interpretation is involved;
 - split any claim that mixes a direct fact and an interpretation;
 - store reproducible evidence using `docs/templates/evidence-record.md` when the claim is important;
+- persist feature-specific records as `migration/features/{feature-id}/evidence/{evidence-id}.md` and project-wide/reusable records as `migration/evidence/{evidence-id}.md`;
+- treat `evidence-record.md` as a schema template name, not the required persisted instance filename;
 - keep direct facts in `Observation` and derived interpretation only in `Inference (optional)`;
 - note if production data cannot be committed and point to an approved internal evidence location instead;
 - contradictory evidence blocks completion until reconciled or explicitly accepted as a known risk.

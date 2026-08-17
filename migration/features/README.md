@@ -1,6 +1,6 @@
 # Feature Artifacts
 
-> Design contract for issue #1. The validator, templates, and existing `synthetic-demo` fixture still require a separate implementation pass before this contract is mechanically enforced.
+Canonical contract: `docs/08-feature-artifact-validation.md`.
 
 Create one lowercase kebab-case directory per migration feature:
 
@@ -11,10 +11,32 @@ migration/features/<feature-id>/
 ├── behavior-contract.md
 ├── target-feature-design.md
 ├── review.md
-└── verification.md
+├── verification.md
+└── evidence/                  # optional
+    └── <evidence-id>.md
 ```
 
-Supporting evidence files may be added alongside these canonical documents.
+## Canonical singleton files
+
+The six root Markdown files above are the only canonical singleton feature artifacts. Their source templates use the same basename under `docs/templates/`:
+
+- `feature-card.md`
+- `legacy-map.md`
+- `behavior-contract.md`
+- `target-feature-design.md`
+- `review.md`
+- `verification.md`
+
+Do not use `feature.md`, `target-design.md`, or `verification-report.md` as aliases for these durable artifacts.
+
+## Evidence records
+
+`docs/templates/evidence-record.md` is a repeatable record schema, not a seventh canonical singleton filename.
+
+- Feature-specific evidence goes under `migration/features/<feature-id>/evidence/<evidence-id>.md`.
+- Project-wide or deliberately reusable evidence goes under `migration/evidence/<evidence-id>.md`.
+- Reference reusable evidence instead of copying it into the feature directory.
+- Use lowercase kebab-case `<evidence-id>` values.
 
 ## Lifecycle metadata
 
@@ -48,8 +70,6 @@ Requirements are cumulative:
 - `implementing`: same as `designed`
 - `reviewing`: above + `review.md`
 - `verifying`: above + `verification.md`
-- `done`: all six canonical documents
+- `done`: all six canonical singleton documents
 
-The implementation change itself is not represented by a mandatory Markdown file.
-
-See `docs/08-feature-artifact-validation.md` for the validation design, rationale, migration requirements, and A-1 scope boundaries.
+The implementation change itself is not represented by a mandatory Markdown file. Evidence records are supporting artifacts and do not replace a required singleton file.

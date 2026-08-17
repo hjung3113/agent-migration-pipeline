@@ -15,7 +15,7 @@ Verification is evidence collection, not optimism.
 - Feature identifier: `{feature-id}` supplied by the coordinator.
 - Inputs: `migration/features/{feature-id}/behavior-contract.md`, `target-feature-design.md`, `review.md`, applicable evidence/characterization records, the implemented system, and `migration/RULEBOOK.md`.
 - Durable output: canonical `migration/features/{feature-id}/verification.md`.
-- Report structure: use `docs/templates/verification-report.md` as the current source template, but persist the feature artifact as `verification.md`.
+- Report structure: use `docs/templates/verification.md`; template and durable singleton use the same basename.
 - This agent is read-only: return the complete report body to `migration-coordinator`, which persists it.
 
 ## Procedure

@@ -6,7 +6,7 @@ compatibility: OpenCode project skill
 
 # Parity Verification
 
-Use `docs/templates/verification-report.md`.
+Use `docs/templates/verification.md` and persist the feature result as `migration/features/{feature-id}/verification.md`.
 
 Potential judge inputs:
 

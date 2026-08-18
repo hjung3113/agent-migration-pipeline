@@ -177,9 +177,10 @@ Track 0은 M0~M5와 독립된 design-only 흐름이며, shared-file 충돌 때�
 1. 해당 이슈의 canonical design 문서를 읽었는가.
 2. 이슈 본문의 stale recommendation을 그대로 구현하지 않는가.
 3. 선행 contract가 실제 `main`에 구현되어 있는가.
-4. 구현 범위가 issue acceptance criteria를 넘어서지 않는가.
-5. 새 lock-in 결정이 생기면 design gate를 다시 열도록 되어 있는가.
-6. shared file을 수정하는 다른 작업과 merge 순서가 정해져 있는가.
+4. 사용자가 해당 구현 범위를 명시적으로 승인했는가. 이 계획 문서 또는 PR의 merge만으로 승인됐다고 간주하지 않는다.
+5. 구현 범위가 issue acceptance criteria를 넘어서지 않는가.
+6. 새 lock-in 결정이 생기면 design gate를 다시 열도록 되어 있는가.
+7. shared file을 수정하는 다른 작업과 merge 순서가 정해져 있는가.
 
 ## 검증/완료 기준
 

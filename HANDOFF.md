@@ -58,14 +58,13 @@ fixtures mirror the contract; one real-tree test tolerates only
 synthetic-demo's known normalization gaps). No non-goal work
 (heading/evidence-grade validation untouched).
 
+The sibling synthetic-demo normalization (PR #54) has since merged to
+`main`; `python3 scripts/validate_scaffold.py` and the 57-test suite both
+pass clean on the rebased tree. No synthetic-demo exemption was added to
+the validator itself — the fix was normalizing the data, per design.
+
 Known follow-ups, not blockers for this branch:
 
-- `python3 scripts/validate_scaffold.py` currently fails on this tree with
-  4 well-formed synthetic-demo diagnostics (missing frontmatter → no
-  id/stage/blocked). That is the expected state until the sibling
-  synthetic-demo normalization branch merges; CI's scaffold step will be
-  red on any branch lacking that normalization. No synthetic-demo
-  exemption was added (per design).
 - Independent adversarial review + verification of this increment are
   still pending (AGENTS.md artifact requirements) — next session should
   run them before merging.

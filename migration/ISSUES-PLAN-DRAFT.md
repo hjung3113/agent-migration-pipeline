@@ -87,7 +87,7 @@ PR 53 기존안의 `#2 -> #1` 순서는 반대로 수정한다.
 8. #9
 9. #11
 
-#9는 #2 이후 언제든 병렬 구현 가능하다. 위 순서는 주로 shared-file 충돌을 줄이기 위한 merge 순서다.
+#9는 #2 이후 언제든 병렬 구현 가능하다. 위 순서는 주로 shared-file 충돌을 줄이기 위한 merge 순서다. 병렬 구현 브랜치라도 merge 직전 최신 `main`을 기준으로 canonical design과 generated/managed block drift를 다시 검증한다.
 
 ## Track D — 구현 의존성
 

@@ -1,3 +1,9 @@
+---
+id: synthetic-demo
+stage: done
+blocked: false
+---
+
 # Feature: synthetic-demo
 
 **SYNTHETIC/DUMMY FEATURE.** Not a real legacy feature. Fabricated for

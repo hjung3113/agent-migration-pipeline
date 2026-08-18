@@ -5,6 +5,43 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-18
 
+## Next session: implementation authorized — start here
+
+User has explicitly authorized starting implementation (AGENTS.md rule 13
+go-ahead) for the Track P / Track D work in `migration/ISSUES-PLAN-DRAFT.md`.
+Every entry below this one documents a **design-only** pass — as of this
+update, the canonical designs for issues #1, #2, #5, #6, #7, #8, #9, #10,
+#11, #13, #14, #15, #17, #18, #20, #22 are merged to `main`. Do not re-derive
+or re-litigate these designs; implement against them as written.
+
+Do this first, in order:
+
+1. Read `migration/ISSUES-PLAN-DRAFT.md` in full — it is the source of truth
+   for scope, per-issue canonical design doc, and merge order. Its Track P
+   order is `#1 -> #2 -> #14 -> (#7, #8) -> #5 -> #13 -> #6 -> #9 -> #11`;
+   Track D order is `#23 -> #20 -> (#18, #22 core) -> #22 live adapter ->
+   #21 (deferred to first real PG-schema feature)`.
+2. Before touching code for any single issue, re-open its "구현 시작 전 체크"
+   in `ISSUES-PLAN-DRAFT.md` (all 7 items are blocking) — confirm the
+   canonical design doc still matches current `main` (other sessions may
+   have landed more changes since this handoff was written) and that the
+   prerequisite issues in the merge order are actually implemented, not
+   just designed.
+3. Start with **Issue #1** (`docs/08-feature-artifact-validation.md` ->
+   `scripts/validate_scaffold.py` feature-artifact checks). It has no
+   unimplemented prerequisite and unblocks #2/#9's shared traversal logic.
+4. Follow AGENTS.md rule 13 per item, not as a one-time blanket release:
+   if implementation surfaces a new lock-in decision the merged design
+   doesn't cover, stop and reopen that item's design gate rather than
+   deciding on the spot.
+5. Independent review scales with lock-in risk (RULEBOOK Agent workflow
+   #6) — Track D's #20 (guard) and #22 (snapshot/diff) are the highest-risk
+   items in this batch and should get adversarial review before merge.
+
+Track 0 (S-001..S-011 legacy-independent redo) is untouched by this
+authorization — it remains its own design-only gate per the "What already
+exists" section below, unless the user separately authorizes it.
+
 ## 2026-08-18 — Issue #20 DB execution safety design merged; implementation still gated
 
 Issue #20 was checked against the actual DB analyzer/skill, current DB tooling
@@ -406,40 +443,26 @@ No validator/template/sample implementation was changed. Implementation
 remains a separate follow-up after this design has been accepted under
 AGENTS.md rule 13.
 
-## State — process reset, redo pending
+## Track 0 — S-001..S-011 redo (still design-only, separate gate)
 
-S-001 through S-011 (`migration/QUEUE.md`, `migration/SLICES-DRAFT.md`) were
-built backwards this session: implementation was dispatched first, and
-design decisions got made on the spot by the implementer (embedded in code
-+ commit messages, sometimes written up into an ADR after the fact). An
-independent audit confirmed a repeated scope-creep pattern on top of that —
-several slices built more than their own stated goal asked for (extra
-import-linter contracts, a global exception safety net, OpenAPI schema
-rewriting, an invented weighted scoring rubric), mostly added during
-self-administered review passes.
+Originally: an independent audit found S-001..S-011 were built backwards
+(implementation dispatched first, design decisions made on the spot,
+scope creep during self-review). AGENTS.md rule 13 was added in response,
+and the user ordered a redo of S-001..S-011 as design-doc elaboration only.
 
-**AGENTS.md rule 13 (added this session) is now in force: no implementation
-starts until the user explicitly says design is done and to start
-building, for any slice with lock-in risk medium or higher.** Read it
-before doing anything else next session.
+Status check needed: the extensive per-issue design work logged above this
+section already touched much of the same surface this redo targeted
+(RULEBOOK Backend/Agent-workflow sections, ADR-0004/0005/0006-adjacent
+docs, characterization/judge-verdict sections). Whether that fully
+satisfies the original redo instruction, item by item, has not been
+independently re-audited — do not assume it's done without checking
+current `migration/RULEBOOK.md`, the ADRs, and
+`docs/templates/pilot-selection-rubric.md` (last known issue: invented
+numeric weights not grounded in any doc) against the original redo scope
+below before treating Track 0 as closed.
 
-**User's explicit instruction: redo S-001..S-011 from the start, but this
-time as design-doc elaboration only — no implementation.** The next
-session's job is to work through the same slice list and produce/refine
-the actual design artifacts (RULEBOOK amendments, ADRs, docs/0X sections,
-behavior contracts) for each one, stopping there. Do not write or dispatch
-any code for these slices until the user reviews the design output and
-explicitly says to start building. This applies to the target skeleton,
-the judge framework, the error contract, the platform boundary, the pilot
-rubric — everything that has code sitting on top of a design decision
-right now should get that decision properly written up and re-examined
-before the code is treated as settled.
-
-Note: this design work does **not** need legacy repository access. Only
-the legacy-facing slices (Q-001..Q-010) are blocked on that — design
-elaboration for the target-side architecture is doable regardless, and
-conflating "blocked on legacy access" with "nothing to do" was a mistake
-this session made.
+This redo remains gated separately from the Track P/D implementation
+authorized above — the user has not released rule 13 for Track 0.
 
 ## What already exists (do not treat as final; re-examine as part of the redo)
 

@@ -312,16 +312,21 @@ def test_legacy_alias_does_not_satisfy_canonical_requirement(
         "blocked: false\n"
         "---\n"
     )
+    alias_error = (
+        f"{FEATURES}/alpha/{alias}: non-canonical legacy alias present "
+        f"(rename to '{canonical}'; canonical and alias must not coexist)"
+    )
     if canonical == "feature-card.md":
         feature = root / FEATURES / "alpha"
         feature.mkdir(parents=True)
         (feature / alias).write_text(card, encoding="utf-8")
         for document in documents:
             (feature / document).write_text("x\n", encoding="utf-8")
-        assert validate_features(root) == [
-            f"{FEATURES}/alpha/feature-card.md: required file missing "
-            f"(legacy alias '{alias}' found; rename it to 'feature-card.md')",
-        ]
+        errors = validate_features(root)
+        assert set(errors) == {
+            alias_error,
+            f"{FEATURES}/alpha/feature-card.md: required file missing",
+        }
     else:
         add_feature(
             root,
@@ -331,10 +336,51 @@ def test_legacy_alias_does_not_satisfy_canonical_requirement(
             card_text=card,
             extra_files={alias: "# legacy alias\n"},
         )
-        assert validate_features(root) == [
-            f"{FEATURES}/alpha/{canonical}: required by stage '{stage}' but missing "
-            f"(legacy alias '{alias}' found; rename it to '{canonical}')",
-        ]
+        errors = validate_features(root)
+        assert set(errors) == {
+            alias_error,
+            f"{FEATURES}/alpha/{canonical}: required by stage '{stage}' but missing",
+        }
+
+
+def test_legacy_alias_coexisting_with_canonical_still_fails(tmp_path: Path) -> None:
+    """A canonical file being present must not hide a divergent legacy alias
+    sitting next to it (docs/08 adversarial finding #3: two files could have
+    different content with no deterministic source of truth)."""
+    root = make_repo(tmp_path)
+    add_feature(
+        root,
+        "alpha",
+        stage="done",
+        documents=tuple(CANONICAL_SINGLETON_FILES[1:]),
+        extra_files={"target-design.md": "# stale alias content\n"},
+    )
+    errors = validate_features(root)
+    assert errors == [
+        f"{FEATURES}/alpha/target-design.md: non-canonical legacy alias present "
+        "(rename to 'target-feature-design.md'; canonical and alias must not coexist)",
+    ]
+
+
+def test_indented_nested_frontmatter_line_fails(tmp_path: Path) -> None:
+    """A YAML parser would reject this as invalid nesting under a flat scalar
+    key; the constrained flat-frontmatter contract must not silently skip it
+    as if it were blank/comment noise (it previously did, and 'bogus' below
+    would have been ignored while id/stage/blocked still validated clean)."""
+    root = make_repo(tmp_path)
+    card = (
+        "---\n"
+        "id: alpha\n"
+        "stage: discovered\n"
+        "blocked: false\n"
+        "  bogus: true\n"
+        "---\n"
+    )
+    add_feature(root, "alpha", card_text=card, documents=("legacy-map.md",))
+    errors = validate_features(root)
+    assert len(errors) == 1
+    assert "invalid indented frontmatter line" in errors[0]
+    assert "bogus: true" in errors[0]
 
 
 def test_duplicate_frontmatter_key_fails(tmp_path: Path) -> None:

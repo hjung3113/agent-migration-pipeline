@@ -42,10 +42,6 @@ LEGACY_SINGLETON_ALIASES = {
     "verification-report.md": "verification.md",
 }
 
-ALIAS_FOR_CANONICAL = {
-    canonical: alias for alias, canonical in LEGACY_SINGLETON_ALIASES.items()
-}
-
 STAGES = (
     "discovered",
     "specified",
@@ -163,7 +159,13 @@ def parse_feature_card(text: str) -> tuple[dict[str, str], list[str]]:
     metadata: dict[str, str] = {}
     for line in lines[1:closing]:
         stripped = line.strip()
-        if not stripped or line.startswith((" ", "\t")) or stripped.startswith("#"):
+        if not stripped or stripped.startswith("#"):
+            continue
+        if line.startswith((" ", "\t")):
+            errors.append(
+                f"invalid indented frontmatter line (nested/malformed YAML is "
+                f"not part of the constrained flat contract): {stripped!r}"
+            )
             continue
         if ":" not in line or not line.split(":", 1)[0].strip():
             errors.append(f"unparseable frontmatter line: {stripped!r}")
@@ -187,17 +189,21 @@ def validate_feature(feature_dir: Path, rel: str) -> list[str]:
             f"(must match {SKILL_NAME_RE.pattern})"
         )
 
+    # A legacy singleton alias must never coexist with (or substitute for) its
+    # canonical file — two files could otherwise diverge with no deterministic
+    # source of truth (docs/08 "Adversarial findings" #3). Check unconditionally,
+    # independent of whether the canonical file is present.
+    for alias, canonical in LEGACY_SINGLETON_ALIASES.items():
+        if (feature_dir / alias).is_file():
+            errors.append(
+                f"{rel}/{alias}: non-canonical legacy alias present "
+                f"(rename to {canonical!r}; canonical and alias must not coexist)"
+            )
+
     card_rel = f"{rel}/{FEATURE_CARD}"
     card_path = feature_dir / FEATURE_CARD
     if not card_path.is_file():
-        alias = ALIAS_FOR_CANONICAL[FEATURE_CARD]
-        if (feature_dir / alias).is_file():
-            errors.append(
-                f"{card_rel}: required file missing "
-                f"(legacy alias {alias!r} found; rename it to {FEATURE_CARD!r})"
-            )
-        else:
-            errors.append(f"{card_rel}: required file missing")
+        errors.append(f"{card_rel}: required file missing")
         return errors
 
     metadata, card_errors = parse_feature_card(
@@ -243,16 +249,7 @@ def validate_feature(feature_dir: Path, rel: str) -> list[str]:
     for required in sorted(STAGE_REQUIRED_FILES[stage]):
         if (feature_dir / required).is_file():
             continue
-        alias = ALIAS_FOR_CANONICAL.get(required)
-        if alias is not None and (feature_dir / alias).is_file():
-            errors.append(
-                f"{rel}/{required}: required by stage {stage!r} but missing "
-                f"(legacy alias {alias!r} found; rename it to {required!r})"
-            )
-        else:
-            errors.append(
-                f"{rel}/{required}: required by stage {stage!r} but missing"
-            )
+        errors.append(f"{rel}/{required}: required by stage {stage!r} but missing")
     return errors
 
 

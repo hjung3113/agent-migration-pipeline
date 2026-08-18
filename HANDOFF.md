@@ -3,73 +3,94 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-18
+Last updated: 2026-08-19
 
-## Next session: implementation authorized — start here
+## Next session: Issue #1 done, continue Track P at Issue #2
 
-User has explicitly authorized starting implementation (AGENTS.md rule 13
-go-ahead) for the Track P / Track D work in `migration/ISSUES-PLAN-DRAFT.md`.
-Every entry below this one documents a **design-only** pass — as of this
-update, the canonical designs for issues #1, #2, #5, #6, #7, #8, #9, #10,
-#11, #13, #14, #15, #17, #18, #20, #22 are merged to `main`. Do not re-derive
-or re-litigate these designs; implement against them as written.
+Implementation authorization from AGENTS.md rule 13 for Track P / Track D
+(`migration/ISSUES-PLAN-DRAFT.md`) is still in effect — this is not a
+one-time release, but it has not been revoked. **Issue #1 is now fully
+implemented, reviewed, and merged to `main`** (PRs #54, #55). Track P order
+per the plan is `#1 -> #2 -> #14 -> (#7, #8) -> #5 -> #13 -> #6 -> #9 -> #11`;
+Track D order is `#23 -> #20 -> (#18, #22 core) -> #22 live adapter -> #21
+(deferred)`. Both tracks otherwise remain design-only pending implementation.
 
 Do this first, in order:
 
-1. Read `migration/ISSUES-PLAN-DRAFT.md` in full — it is the source of truth
-   for scope, per-issue canonical design doc, and merge order. Its Track P
-   order is `#1 -> #2 -> #14 -> (#7, #8) -> #5 -> #13 -> #6 -> #9 -> #11`;
-   Track D order is `#23 -> #20 -> (#18, #22 core) -> #22 live adapter ->
-   #21 (deferred to first real PG-schema feature)`.
-2. Before touching code for any single issue, re-open its "구현 시작 전 체크"
-   in `ISSUES-PLAN-DRAFT.md` (all 7 items are blocking) — confirm the
-   canonical design doc still matches current `main` (other sessions may
-   have landed more changes since this handoff was written) and that the
-   prerequisite issues in the merge order are actually implemented, not
-   just designed.
-3. Start with **Issue #1** (`docs/08-feature-artifact-validation.md` ->
-   `scripts/validate_scaffold.py` feature-artifact checks). It has no
-   unimplemented prerequisite and unblocks #2/#9's shared traversal logic.
-4. Follow AGENTS.md rule 13 per item, not as a one-time blanket release:
-   if implementation surfaces a new lock-in decision the merged design
-   doesn't cover, stop and reopen that item's design gate rather than
-   deciding on the spot.
-5. Independent review scales with lock-in risk (RULEBOOK Agent workflow
-   #6) — Track D's #20 (guard) and #22 (snapshot/diff) are the highest-risk
-   items in this batch and should get adversarial review before merge.
+1. Re-open Issue #2's "구현 시작 전 체크" in `ISSUES-PLAN-DRAFT.md` (all 7
+   items blocking) — confirm `docs/issue-2-artifact-schema-validation.md`
+   still matches current `main` and that Issue #1's A-1 parser/structure
+   (now in `scripts/validate_scaffold.py`) is the actual foundation to build
+   the enum/ID/reference schema layer on top of, per the plan's `P-A` lane
+   (`#1 -> #2 -> #9`). Do not add a second lifecycle parser — `feature-card.md`
+   frontmatter stays the sole machine-readable lifecycle source.
+2. Follow AGENTS.md rule 13 per item: a new lock-in decision the merged
+   design doesn't cover reopens that item's design gate, it doesn't get
+   decided on the spot.
+3. Independent review scales with lock-in risk (RULEBOOK Agent workflow
+   #6) — Track D's #20 (guard) and #22 (snapshot/diff) are still the
+   highest-risk items in this batch and should get adversarial review
+   before merge, whenever Track D implementation starts.
 
 Track 0 (S-001..S-011 legacy-independent redo) is untouched by this
 authorization — it remains its own design-only gate per the "What already
 exists" section below, unless the user separately authorizes it.
 
-## 2026-08-18 — Issue #1 A-1 feature-artifact validator implemented (branch hjung3113/issue1-validator-high)
+## 2026-08-19 — Issue #1 A-1 feature-artifact validator: implemented, reviewed, merged (PRs #54, #55)
 
-Implemented the A-1 increment of `docs/08-feature-artifact-validation.md`
-against its merged canonical design: all 11 "Validator behavior"
-requirements in `scripts/validate_scaffold.py` (canonical singleton set +
-same-basename template drift check, feature directory enumeration/name
-validation, feature-card.md frontmatter parsing with duplicate-key
-detection, id/stage/blocked validation incl. done+blocked invariant,
-cumulative stage file requirements, legacy aliases never satisfying
-canonical requirements, evidence/supporting files ignored, all failures
-aggregated across all features). Existing scaffold checks untouched.
-New test suite: `scripts/tests/test_validate_scaffold.py` (57 tests; tmp
-fixtures mirror the contract; one real-tree test tolerates only
-synthetic-demo's known normalization gaps). No non-goal work
-(heading/evidence-grade validation untouched).
+Implemented and merged the A-1 increment of
+`docs/08-feature-artifact-validation.md` against its merged canonical
+design. Two branches, built in parallel by opencode (glm-5.3, `--variant
+low`/`--variant high`) in separate Orca worktrees off the same base:
 
-The sibling synthetic-demo normalization (PR #54) has since merged to
-`main`; `python3 scripts/validate_scaffold.py` and the 57-test suite both
-pass clean on the rebased tree. No synthetic-demo exemption was added to
-the validator itself — the fix was normalizing the data, per design.
+- `hjung3113/issue1-normalize-low` (PR #54, merged): added canonical
+  `id/stage/blocked` frontmatter to `migration/features/synthetic-demo/
+  feature-card.md` and created the three missing stage-`done` singleton
+  artifacts (`legacy-map.md`, `review.md`, `verification.md`), all sourced
+  honestly from the feature's existing artifacts — no fabricated legacy
+  facts, no fabricated review PASS.
+- `hjung3113/issue1-validator-high` (PR #55, merged): extended
+  `scripts/validate_scaffold.py` with all 11 "Validator behavior"
+  requirements — canonical singleton set + same-basename template drift
+  check, feature directory enumeration/name validation, feature-card.md
+  frontmatter parsing with duplicate-key detection, id/stage/blocked
+  validation incl. done+blocked invariant, cumulative stage file
+  requirements, legacy-alias rejection, evidence/supporting files ignored,
+  all failures aggregated across all features. Existing scaffold checks
+  untouched. New test suite `scripts/tests/test_validate_scaffold.py`.
 
-Known follow-ups, not blockers for this branch:
+PR #55 got a real adversarial review round (owner review, not rubber-stamp)
+before merge; 3 findings, all confirmed valid and fixed in `5f252ef`:
 
-- Independent adversarial review + verification of this increment are
-  still pending (AGENTS.md artifact requirements) — next session should
-  run them before merging.
-- `/migration-status` integration of the validator remains open per
-  docs/08.
+1. **Blocker** — `/migration-status` integration was deferred as an
+   optional follow-up, but it is explicit confirmed scope (Issue #1
+   implementation-comment item 8, and `docs/08`'s "`/migration-status`
+   integration" section). Fixed: `.opencode/commands/migration-status.md`
+   now runs the validator first and surfaces failures as process blockers.
+2. **Validation hole** — `parse_feature_card()` silently skipped any
+   indented line as if it were blank/comment, so nested/malformed YAML
+   under a flat scalar key (e.g. a stray indented `bogus: true`) passed
+   undetected. Fixed: indented non-empty, non-comment lines now fail as
+   unparseable.
+3. **Determinism gap** — a present canonical file short-circuited the
+   check for a coexisting legacy alias (`feature.md` / `target-design.md`
+   / `verification-report.md`), so canonical and alias could exist
+   side by side with divergent content and no detected drift. Fixed:
+   alias presence is now checked unconditionally, independent of whether
+   the canonical file is also present.
+
+Final state on `main`: `python3 scripts/validate_scaffold.py` passes,
+`python3 -m pytest scripts/tests/ -q` — 59 passed. No new lock-in design
+decisions were made; all three fixes were within `docs/08`'s already-merged
+contract, so no design gate was reopened.
+
+Remaining open item, not a blocker for #1 itself: verification.md (the
+formal verifier pass) for this increment has not been run as a separate
+step — the adversarial review above stood in for it this round. Next
+session doing Track P should decide whether Issue #1 needs a standalone
+`verifier` pass before being considered fully closed, or whether the
+review + CI green + 59 passing tests is treated as sufficient given its
+risk level (validator/tooling change, not DB/production-safety).
 
 ## 2026-08-18 — Issue #20 DB execution safety design merged; implementation still gated
 

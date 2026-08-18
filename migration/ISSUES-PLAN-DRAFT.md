@@ -52,8 +52,6 @@
 - **#2 다음**: #1 parser/structure 위에 enum/ID/scope/reference validation을 올린다. body `Status:` 같은 두 번째 lifecycle source를 만들지 않는다.
 - **#9 다음**: #2와 parser/constants를 공유할 수 있지만 grade promotion 판단은 반드시 explicit base revision을 받는 별도 revision-aware checker로 유지한다.
 
-PR 53 기존안의 `#2 -> #1` 순서는 반대로 수정한다.
-
 ### P-S: durable state / command / STOP lane
 
 `#14 -> (#5, #13)`
@@ -71,9 +69,11 @@ PR 53 기존안의 `#2 -> #1` 순서는 반대로 수정한다.
 - **#7**: agent/skill 선택을 phase + primary artifact 기반으로 명시하고 normal return과 gate-blocking STOP을 구분한다.
 - **#8**: `migration-designer`는 deny-by-default + `target-feature-design.md` 예외만 허용하고, `task: deny`를 포함해 implementation proxy를 차단한다.
 - **#6**: #5 command ownership, #7 routing, #8 permission boundary를 소비해 skill별 exact inputs/outputs/branches를 반영한다. skill이 STATE/QUEUE/lifecycle을 독자 갱신하지 않는다.
-- **#11**: 단순 `where practical` 삭제가 아니다. effective judge configuration fingerprint, mandatory negative control, reuse 조건, verification artifact 기록, BLOCKED 처리, regression test까지 한 구현 단위로 적용한다.
+- **#11**: 단순 `where practical` 삭제가 아니다. `docs/03-evidence-and-verification.md`/`migration/RULEBOOK.md:96`/`docs/templates/verification.md`는 이미 canonical이므로, 남은 구현 범위는 `.opencode/skills/parity-verification/SKILL.md:30`("where practical" 문구 잔존), verifier agent, regression test뿐이다 — 이미 병합된 정책 문구를 다시 설계/재작성하지 않는다.
 
 #11은 #6과 `parity-verification` 파일이 겹치므로 #6 이후 merge하는 것을 기본으로 한다.
+
+**Track D와의 교차 의존성**: #11의 "effective judge configuration"에는 DB 소스가 포함된다(`docs/issue-22:32,244,342`, `docs/03:99`) — DB 어댑터가 바뀌면 해당 configuration의 negative control도 다시 통과해야 PASS로 인정된다. 따라서 #11 회귀 테스트는 D-C(#22)의 `DbAssertionPort` adapter가 붙는 시점(Track D merge 순서 4단계) 이후에 그 조합까지 커버해야 완전하다. #11 자체 merge를 그 시점까지 미룰 필요는 없지만, #11 완료 기준에 "DB 소스 포함 configuration"은 #22 live adapter 이후로 별도 표기한다.
 
 ### Track P merge 권장 순서
 
@@ -99,10 +99,13 @@ PR 53 기존안의 `#2 -> #1` 순서는 반대로 수정한다.
 - `.gitignore`의 `.env` 보호는 이미 존재하므로 불필요하게 다시 설계하거나 중복 설정하지 않는다.
 - **#20 다음**: profile label을 safety proof로 사용하지 않는다. 실제 연결 후 engine/server/database identity를 attestation하고, `ReadOnlySession`/`TestWriteSession` capability를 분리하며 unknown/mismatch는 fail-closed한다.
 - keyword-only guard, `--force`/`--unsafe`, production RW profile은 금지한다.
+- `docs/12-db-execution-safety-contract.md`는 test-side materialization 의미론의 authoritative source로 `docs/issue-19-mssql-test-materialization.md`를 지정한다. 이슈 #19는 closed(도구 미구현)이므로, #20 구현이 이 문서가 요구하는 materialization 개념에 실제로 의존하는 부분이 있다면 별도 스텝으로 명시하고, 필요 시 #19를 재오픈할지 여부를 사용자에게 확인한다 — 조용히 두고 넘어가지 않는다.
 
 ### D-I: MSSQL inspection
 
-`#23 + #20 -> #18`
+`#23 -> #18`
+
+#20은 #18의 하드 선행조건이 아니다 — `docs/issue-18:57,106`은 #18에 쓰기 경로가 없고 #20은 "추가 방어선일 수 있다(may add)" 수준으로만 언급한다. #20이 먼저 merge되면 `mssql-prod-ro` 세션을 그 attested 경로로 여는 것이 자연스럽지만, #18 구현 시작을 #20 완료까지 블로킹하지 않는다.
 
 - `scripts/db/mssql_inspect.py`는 `mssql-prod-ro`만 허용한다.
 - V1은 fixed catalog `SELECT` allowlist 기반 `snapshot`에 한정한다.
@@ -159,20 +162,22 @@ Track 0은 HANDOFF.md 지시대로 계속 **design-only**다. Track P/D 구현 �
 
 ## 통합 마일스톤
 
-| 마일스톤 | 범위 | 완료조건 |
+**모든 M0~M5 행은 AGENTS.md #13 design gate의 적용을 받는다: 완료조건을 만족해도, 각 이슈 구현을 사용자가 명시적으로 승인하지 않으면 착수하지 않는다. 이 표는 "이 순서로 하면 된다"는 실행 스케줄이 아니라 승인이 떨어졌을 때의 순서 참조표다.**
+
+| 마일스톤 | 범위 | 완료조건 (승인 후에만 유효) |
 |---|---|---|
 | M0 | 이 계획 정합성 확정 | PR plan이 merged canonical design과 일치 |
-| M1 | P:#1/#14, D:#23 foundation | 각 이슈 acceptance criteria + 관련 테스트 통과 |
-| M2 | P:#2/#7/#8/#5, D:#20 | shared schema/state/routing/safety contract 구현 완료 |
-| M3 | P:#13/#6/#9, D:#18 + #22 core | leaf propagation 및 DB core tooling 구현 완료 |
-| M4 | P:#11, D:#22 live adapter/integration | parity judge/self-check 및 DB comparison 경로 연결 |
-| M5 | #21 runtime bootstrap | 첫 실제 PostgreSQL schema-changing feature에서만 수행 |
+| M1 | P:#1/#14, D:#23 foundation | 사용자 승인 + 각 이슈 acceptance criteria + 관련 테스트 통과 |
+| M2 | P:#2/#7/#8/#5, D:#20 | 사용자 승인 + shared schema/state/routing/safety contract 구현 완료 |
+| M3 | P:#13/#6/#9, D:#18 + #22 core | 사용자 승인 + leaf propagation 및 DB core tooling 구현 완료 |
+| M4 | P:#11, D:#22 live adapter/integration | 사용자 승인 + parity judge/self-check 및 DB comparison 경로 연결(#11 DB-포함 configuration은 #22 live adapter 이후) |
+| M5 | #21 runtime bootstrap | 사용자 승인 + 첫 실제 PostgreSQL schema-changing feature에서만 수행 |
 
 Track 0은 M0~M5와 독립된 design-only 흐름이며, shared-file 충돌 때문에 merge 직전 최신 main 재검토가 필수다.
 
-## 구현 시작 전 체크
+## 구현 시작 전 체크 (전부 blocking — 하나라도 아니오면 구현을 시작하지 않는다)
 
-각 이슈 구현을 시작하기 전에 다음을 확인한다.
+각 이슈 구현을 시작하기 전에 아래 7개를 전부 확인한다. 하나라도 미충족이면 해당 이슈 구현에 착수하지 않고, 미충족 항목을 사용자에게 보고한다.
 
 1. 해당 이슈의 canonical design 문서를 읽었는가.
 2. 이슈 본문의 stale recommendation을 그대로 구현하지 않는가.

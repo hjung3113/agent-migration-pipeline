@@ -42,6 +42,36 @@ Track 0 (S-001..S-011 legacy-independent redo) is untouched by this
 authorization — it remains its own design-only gate per the "What already
 exists" section below, unless the user separately authorizes it.
 
+## 2026-08-18 — Issue #1 A-1 feature-artifact validator implemented (branch hjung3113/issue1-validator-high)
+
+Implemented the A-1 increment of `docs/08-feature-artifact-validation.md`
+against its merged canonical design: all 11 "Validator behavior"
+requirements in `scripts/validate_scaffold.py` (canonical singleton set +
+same-basename template drift check, feature directory enumeration/name
+validation, feature-card.md frontmatter parsing with duplicate-key
+detection, id/stage/blocked validation incl. done+blocked invariant,
+cumulative stage file requirements, legacy aliases never satisfying
+canonical requirements, evidence/supporting files ignored, all failures
+aggregated across all features). Existing scaffold checks untouched.
+New test suite: `scripts/tests/test_validate_scaffold.py` (57 tests; tmp
+fixtures mirror the contract; one real-tree test tolerates only
+synthetic-demo's known normalization gaps). No non-goal work
+(heading/evidence-grade validation untouched).
+
+Known follow-ups, not blockers for this branch:
+
+- `python3 scripts/validate_scaffold.py` currently fails on this tree with
+  4 well-formed synthetic-demo diagnostics (missing frontmatter → no
+  id/stage/blocked). That is the expected state until the sibling
+  synthetic-demo normalization branch merges; CI's scaffold step will be
+  red on any branch lacking that normalization. No synthetic-demo
+  exemption was added (per design).
+- Independent adversarial review + verification of this increment are
+  still pending (AGENTS.md artifact requirements) — next session should
+  run them before merging.
+- `/migration-status` integration of the validator remains open per
+  docs/08.
+
 ## 2026-08-18 — Issue #20 DB execution safety design merged; implementation still gated
 
 Issue #20 was checked against the actual DB analyzer/skill, current DB tooling

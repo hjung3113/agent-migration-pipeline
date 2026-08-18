@@ -1,95 +1,198 @@
-# Issues Plan Draft — 오픈 이슈 15건 + S-001~S-011 재설계 통합 계획
+# Open Issues Implementation Plan — merged design 기준 통합 실행 계획
 
 작성일: 2026-08-18
-전제: AGENTS.md #13(design gate) 적용 — lock-in 위험 "중" 이상 항목은 설계 산출물만 만들고 멈춘다. 이 문서 자체도 계획(설계 준비) 산출물이며, 사용자 승인 전까지 구현을 디스패치하지 않는다.
+
+이 문서는 오픈 이슈 15건과 Track 0(S-001~S-011)의 **실행 순서와 의존성**만 정리한다. 각 오픈 이슈의 설계는 이미 `main`에 병합된 canonical design을 source of truth로 사용하며, 이 문서에서 같은 결정을 다시 설계하지 않는다.
+
+`AGENTS.md` rule 13은 계속 적용된다. 이 계획의 병합은 구현 승인이 아니다. 구현은 사용자가 해당 구현 범위를 명시적으로 승인한 뒤 시작한다.
 
 ## 범위
 
-- Track 0: HANDOFF.md가 이미 지시한 S-001~S-011 재설계(design-only) — 별도 트랙으로 존재, 여기서는 다른 두 트랙과의 우선순위 관계만 정리
-- Track P: 프로세스/에이전트 설정 하드닝 (오픈 이슈 #1,2,5,6,7,8,9,11,13,14 — 전부 A-시리즈)
-- Track D: DB 도구 신설 (오픈 이슈 #18,20,21,22,23 — DB-Tooling 시리즈)
+- Track 0: HANDOFF.md가 지시한 S-001~S-011 재설계 — design-only 유지
+- Track P: 프로세스/에이전트/validator 하드닝 — #1, #2, #5, #6, #7, #8, #9, #11, #13, #14
+- Track D: DB tooling — #18, #20, #21, #22, #23
 
-Track P/D는 레거시 접근 불필요, Track 0와도 독립적으로 병행 가능. 세 트랙 내부 순서만 의존성 있음.
+현재 open 이슈 집합에 #19는 포함되지 않는다. 다만 #22의 legacy side-effect fixture 등에서 이미 설계된 외부 선행조건으로 참조될 수 있다.
 
-## Track P — 프로세스/에이전트 설정 하드닝
+## 계획 원칙
 
-| ID | 이슈 | 제목 | 난이도 | lock-in위험 | 설계게이트 | 선행 |
-|---|---|---|---|---|---|---|
-| P-001 | #11 (A-9, Critical) | parity-verification/verifier judge 자기검증 "where practical" 제거, negative control 필수 단계화 | 간단 | 하 | 불요(프로즈 강화, 즉시 적용 가능) | 없음 |
-| P-002 | #14 (A-12, High) | STATE.md/QUEUE.md 기계 파싱 포맷·필드 enum 확정 | 보통 | 중 | **필요** — RULEBOOK 또는 신규 문서에 필드/enum 규약 명시 후 스크립트/문서 반영 | 없음 |
-| P-003 | #9 (A-7, Critical) | evidence-record.md Grade history 필드 + 상향 절차 | 간단 | 중 | **필요** — 템플릿에 추가할 필드 구조를 먼저 확정(표 컬럼 정의) | 없음 |
-| P-004 | #2 (A-2, High) | enum/ID 포맷 검증 스크립트 확장 | 보통 | 중 | **필요** — 검증 대상 enum/ID 패턴 전체 목록을 먼저 확정 | P-002, P-003 (검증할 필드/값이 이 두 결정에 좌우됨) |
-| P-005 | #1 (A-1, Critical) | validate_scaffold.py에 feature 단위 필수 산출물 검증 추가 | 보통 | 중 | **필요** — feature 디렉토리 네이밍 규칙 확정 + Status별 필수 파일 매핑표 | P-004 (순회 로직 재사용) |
-| P-006 | #13 (A-11, High) | 8개 agent md에 stop condition 재게시 + STOP 시 파일 단위 행동 명시 | 보통 | 중 | **필요** — "STOP 시 행동" 표준 절차(OQ 추가→feature Status 변경→STATE 갱신→상위 반환)를 한 곳에 정의 후 8곳에 적용 | P-002(Status enum), P-005(feature Status 필드) |
-| P-007 | #5 (A-4+A-13, High) | 커맨드 7종에 Output/Preconditions/State updates 섹션 추가 | 보통 | 중 | **필요** — 출력 경로 템플릿·State updates 표기 규약을 한 번 정의 후 7개 파일에 일관 적용 | P-002(enum 값) |
-| P-008 | #6 (A-4, Medium) | 스킬 9종에 입출력 경로 + if-then 분기 추가 | 보통 | 하 | 불요(target-feature-design 기존 패턴을 그대로 확장) | P-007 (경로 규약 일치 필요) |
-| P-009 | #7 (A-5, High) | 스킬 4종 배타 트리거 문구 + agent 7종 escalation 문구 | 간단 | 하 | 불요(문구 추가) | 없음(병행 가능) |
-| P-010 | #8 (A-6, Medium) | migration-designer 편집 범위를 문서로 명시 제한 | 간단 | 하 | 불요 | 없음(병행 가능) |
+1. **이슈 본문보다 merged canonical design이 우선한다.** 이슈 작성 당시 전제가 이후 설계 PR에서 수정된 경우 반드시 현재 `main`의 설계를 따른다.
+2. **설계 재개방 금지.** 구현 중 새로운 lock-in 결정이 필요해지면 임의 결정하지 않고 해당 design gate를 다시 연다.
+3. **논리 의존성과 파일 merge 순서를 구분한다.** 서로 독립적인 작업도 같은 validator/agent/skill 파일을 건드리면 순차 merge한다.
+4. **공통 contract를 먼저 구현하고 leaf 전파를 나중에 한다.** artifact schema, durable state, routing/role boundary, DB connection/safety가 공통 기반이다.
+5. **YAGNI 유지.** 현재 feature가 요구하지 않는 범용 abstraction, 추가 migration history, always-on DB infra는 만들지 않는다.
 
-### Track P 권장 순서
+## Canonical design source
 
-1. **즉시 병행 가능(설계게이트 없음)**: P-001, P-009, P-010
-2. **설계 먼저**: P-002 → P-003 (병행 가능, 서로 독립)
-3. P-002·P-003 승인 후 → P-004
-4. P-004 승인 후 → P-005
-5. P-002 + P-005 승인 후 → P-007 → P-008
-6. P-002 + P-005 승인 후 → P-006
+| 이슈 | 구현 source of truth | 현재 판단 |
+|---|---|---|
+| #1 | `docs/08-feature-artifact-validation.md` | 설계 병합 완료, 구현 대기 |
+| #2 | `docs/issue-2-artifact-schema-validation.md` | #1 위의 static schema layer |
+| #5 | `docs/10-command-execution-contract.md` | durable state contract 소비 |
+| #6 | `docs/10-skill-execution-contract.md` | #5/#7/#8 ownership/routing 보존 |
+| #7 | `docs/09-agent-skill-routing.md` | phase + primary artifact 기반 routing |
+| #8 | `docs/10-agent-role-boundary.md` | path-granular designer permission 적용 |
+| #9 | `docs/09-evidence-grade-transition-control.md` | revision-aware transition 검사 |
+| #11 | `docs/03-evidence-and-verification.md`, `docs/templates/verification.md`, `migration/RULEBOOK.md` | effective judge self-check 필수 |
+| #13 | `docs/11-stop-condition-contract.md` | STOP payload/routing/OQ 처리 |
+| #14 | `docs/11-durable-state-protocol.md` | STATE/QUEUE/generation의 canonical contract |
+| #18 | `docs/issue-18-mssql-readonly-inspection.md` | `mssql-prod-ro` 전용 catalog inspection |
+| #20 | `docs/12-db-execution-safety-contract.md` | runtime attestation + capability boundary |
+| #21 | `docs/13-postgresql-test-db-and-schema-migration.md` | Alembic Adopt 완료; runtime bootstrap만 Defer |
+| #22 | `docs/issue-22-db-snapshot-diff-contract.md` | feature-scoped delta parity contract |
+| #23 | `docs/12-db-connection-secrets-contract.md` | canonical profile/resolver contract |
 
-## Track D — DB 도구 신설
+## Track P — 구현 의존성
 
-| ID | 이슈 | 제목 | 난이도 | lock-in위험 | 설계게이트 | 선행 |
-|---|---|---|---|---|---|---|
-| D-001 | #23 (High) | DB 자격증명/연결 프로필 명명 규약 (`.env.example`, gitignore, docs/06 결정 기록) | 간단 | 중 | **필요** — 프로필 이름 집합(`prod-readonly`/`test-readwrite`/`pg-test-readwrite` 등) 확정을 docs/06에 기록 | 없음, 다른 D-항목 전부의 선행 |
-| D-002 | #20 (Critical) | 위험 DB 동작(INSERT/UPDATE/EXEC) 테스트 DB 강제 라우팅 가드 | 복잡 | **상** | **필요, 별도 ADR** — 가드 모듈의 실행 시점(연결 시 vs 구문 파싱 시), 예외 처리, 프로필-호스트 매핑 검증 로직을 ADR로 남긴 뒤 시작 | D-001 |
-| D-003 | #18 (High) | MSSQL 읽기전용 조회 도구 (`scripts/db/mssql_inspect.py`) | 보통 | 중 | **필요** — 출력 스키마(마크다운/JSON), legacy-map.md 삽입 형식을 먼저 정의 | D-001, D-002(가드 통과 원칙) |
-| D-004 | #22 (High) | DB Before/After 스냅샷·Diff 도구 (`scripts/db/db_snapshot_diff.py`) | 복잡 | 중 | **필요** — MSSQL/PostgreSQL 공통 커넥터 추상화 + closed #12(비교 의미론) 규칙을 어떻게 읽어들이는지 인터페이스 정의 | D-001, D-002, 이미 해결된 이슈 #12(비교 의미론, `behavior-contract.md` Comparison semantics) |
-| D-005 | #21 (Medium) | PostgreSQL 테스트 DB 부트스트랩/마이그레이션 도구 | 보통 | 중 | **필요하나 지연 가능** — 이슈 작성자도 Phase 3~4 실질 필요 시점으로 명시. Alembic 채택 여부만 지금 docs/06 "Defer" 항목에 기록해두고 실제 설계는 뒤로 미룸 | D-001 |
+### P-A: feature artifact / validator lane
 
-### Track D 권장 순서
+`#1 -> #2 -> #9`
 
-1. D-001 (선행 필수, 다른 모두의 기반)
-2. D-002 (D-001 승인 즉시 착수 — Critical, blast radius 최대)
-3. D-003 (D-002 승인 후, 읽기 전용이라 상대적으로 가벼움)
-4. D-004 (D-002 승인 후, D-003과 병행 가능하나 복잡도 높음 — D-003 이후 착수 권장)
-5. D-005 (지금은 docs/06에 "Defer" 결정만 기록, 실제 도구 설계는 뒤로 미룸)
+- **#1 먼저**: `feature-card.md`의 canonical `id/stage/blocked`, stage별 필수 artifact, synthetic-demo 정규화, validator 구조를 먼저 구현한다.
+- **#2 다음**: #1 parser/structure 위에 enum/ID/scope/reference validation을 올린다. body `Status:` 같은 두 번째 lifecycle source를 만들지 않는다.
+- **#9 다음**: #2와 parser/constants를 공유할 수 있지만 grade promotion 판단은 반드시 explicit base revision을 받는 별도 revision-aware checker로 유지한다.
 
-## Track 0 — S-001~S-011 재설계 (HANDOFF 기존 지시, 참고용)
+PR 53 기존안의 `#2 -> #1` 순서는 반대로 수정한다.
 
-이 문서가 새로 만드는 트랙 아님. HANDOFF.md에 이미 지시된 대로: RULEBOOK Backend #4-8/Agent workflow #6, ADR-0004/0005/0006, docs/02 pilot 섹션, docs/03 characterization/judge-verdict 섹션, pilot-selection-rubric을 design-only로 재검토. Track P/D와 파일 충돌 없음(다른 문서 영역) — 병행 가능.
+### P-S: durable state / command / STOP lane
 
-## 전체 권장 실행 순서 (세 트랙 통합, 우선순위 = Critical 이슈 먼저)
+`#14 -> (#5, #13)`
 
-1. P-001 (#11 Critical, 즉시 적용 가능)
-2. Track 0 재설계 착수 (이미 지시된 작업, 이 문서와 무관하게 진행 가능)
-3. P-002, P-003 설계 (병행) → 승인 대기
-4. D-001 설계 → 승인 대기
-5. (3 승인 후) P-004 설계 → 승인 대기 → (4 승인 후) D-002 ADR 작성 → 승인 대기
-6. (5 승인 후) P-005 설계 → 승인 대기; D-002 승인 후 D-003 설계 → 승인 대기
-7. P-006, P-007 설계 (P-002+P-005 승인 후) → 승인 대기; D-004 설계 (D-002+D-003 이후) → 승인 대기
-8. P-008; D-005는 docs/06 Defer 기록만
-9. P-009, P-010 — 언제든 병행 가능, 위 순서와 무관
+- **#14 먼저**: STATE/QUEUE frontmatter, canonical queue table, legal transition, blocker/dependency syntax, shared `generation`, ordered write/recovery를 한 세트로 구현한다. enum만 부분 적용하지 않는다.
+- **#5**: command argument/precondition/output 계약을 #14의 exact state transitions에 연결한다. `migration-status`는 read-only로 유지한다.
+- **#13**: STOP 원인/payload/OQ dedupe/routing은 #13 계약을 따르고, 실제 QUEUE/STATE persistence는 #14 contract만 사용한다. read-only specialist가 shared state를 직접 수정하게 만들지 않는다.
 
-## 마일스톤 — top-down vs bottom-up 판단 포함
+#5와 #13은 논리적으로 병렬 가능하지만 coordinator/validator 관련 변경이 겹치면 순차 merge한다.
 
-세 트랙 전부 bottom-up(각자 세부구현 후 나중에 합침)으로 가면 안 되는 지점이 있음: Track D는 D-002(위험동작 가드)가 D-003/004/005의 연결 방식·프로필 이름·예외처리를 전부 결정하므로, 가드 없이 세 도구를 따로 만들면 나중에 전부 뜯어고쳐야 함(#20 원문: "모든 DB 쓰기 스크립트의 필수 진입점"). 이 지점만 top-down.
+### P-R: routing / permission / skill lane
 
-Track P는 P-002(STATE/QUEUE enum)·P-003(grade history 필드) 두 개만 먼저 고정하면 나머지(P-004~008)는 서로 자기 파일만 건드리는 leaf 작업이라 병렬 bottom-up 가능 — 합칠 필요 없음.
+`(#7, #8) -> #6 -> #11`
 
-Track 0(S-001~11 재설계)은 기존 지시대로 별도 진행, 다른 두 트랙과 파일 안 겹쳐 전체 마일스톤과 항상 병행.
+- **#7**: agent/skill 선택을 phase + primary artifact 기반으로 명시하고 normal return과 gate-blocking STOP을 구분한다.
+- **#8**: `migration-designer`는 deny-by-default + `target-feature-design.md` 예외만 허용하고, `task: deny`를 포함해 implementation proxy를 차단한다.
+- **#6**: #5 command ownership, #7 routing, #8 permission boundary를 소비해 skill별 exact inputs/outputs/branches를 반영한다. skill이 STATE/QUEUE/lifecycle을 독자 갱신하지 않는다.
+- **#11**: 단순 `where practical` 삭제가 아니다. effective judge configuration fingerprint, mandatory negative control, reuse 조건, verification artifact 기록, BLOCKED 처리, regression test까지 한 구현 단위로 적용한다.
 
-| 마일스톤 | 내용 | 방식 | 완료조건 |
-|---|---|---|---|
-| M0 | P-002·P-003·D-001 설계 확정 + P-001/P-009/P-010 즉시 실행 | top-down(P-002/003/D-001), 나머지 병행 | 사용자 승인 |
-| M1 | P-004(enum검증기 설계), D-002 ADR(가드 아키텍처) | top-down(D-002 그림 먼저) | 사용자 승인 |
-| M2 | P-005(feature 산출물 검증기 설계+구현), D-002 구현 | M1 승인 후 착수 | 구현 완료 + 리뷰 |
-| M3 | P-006/P-007/P-008(agent/command/skill 전파, 병렬), D-003(MSSQL 조회), D-004(스냅샷/diff) | bottom-up — M0~M2가 정한 규약 위에서 병렬 | 개별 승인 |
-| M4 | D-005는 docs/06 Defer 기록만, QUEUE.md에 전체 항목 등록(S-012 패턴) | 마무리 | 등록 완료 |
+#11은 #6과 `parity-verification` 파일이 겹치므로 #6 이후 merge하는 것을 기본으로 한다.
 
-Track 0은 M0~M4 전체와 병행, 별도 승인 흐름으로 진행.
+### Track P merge 권장 순서
+
+1. #1
+2. #2
+3. #14
+4. #7, #8
+5. #5
+6. #13
+7. #6
+8. #9
+9. #11
+
+#9는 #2 이후 언제든 병렬 구현 가능하다. 위 순서는 주로 shared-file 충돌을 줄이기 위한 merge 순서다.
+
+## Track D — 구현 의존성
+
+### D-F: connection / execution safety foundation
+
+`#23 -> #20`
+
+- **#23 먼저**: canonical logical profiles는 정확히 `mssql-prod-ro`, `mssql-test-rw`, `postgres-test-rw`이다. env keys는 `MSSQL_PROD_RO_CONN`, `MSSQL_TEST_RW_CONN`, `PG_TEST_RW_CONN`을 사용한다. raw connection string/임의 env-var 입력 경로를 추가하지 않는다.
+- `.gitignore`의 `.env` 보호는 이미 존재하므로 불필요하게 다시 설계하거나 중복 설정하지 않는다.
+- **#20 다음**: profile label을 safety proof로 사용하지 않는다. 실제 연결 후 engine/server/database identity를 attestation하고, `ReadOnlySession`/`TestWriteSession` capability를 분리하며 unknown/mismatch는 fail-closed한다.
+- keyword-only guard, `--force`/`--unsafe`, production RW profile은 금지한다.
+
+### D-I: MSSQL inspection
+
+`#23 + #20 -> #18`
+
+- `scripts/db/mssql_inspect.py`는 `mssql-prod-ro`만 허용한다.
+- V1은 fixed catalog `SELECT` allowlist 기반 `snapshot`에 한정한다.
+- arbitrary SQL, DDL/DML, `EXEC`, SP/job 실행, application row export는 범위 밖이다.
+- JSON을 canonical capture로 두고 raw definitions/job text는 기본적으로 non-Git local artifact로 보관한다.
+
+### D-C: DB snapshot/diff
+
+`#23 + #20 -> #22 core`, 이후 live adapter integration에서 `#18` 및 실제 fixture 준비 상태와 join
+
+#22를 #18 전체 완료 뒤에만 시작하도록 직렬화하지 않는다.
+
+먼저 DB 비의존 core를 구현할 수 있다.
+
+- canonical typed JSON / digest
+- compatible snapshot pairing
+- `delta` (`added/removed/updated`)
+- raw-value-free `render`
+- stable key / hard `max_rows` / deterministic ordering validation
+- staged snapshot/delta synthetic mutation negative-control
+
+그 뒤 read-only `capture`와 `DbAssertionPort` adapter를 #20 guard에 연결한다. live MSSQL integration은 #18이 준비된 뒤 연결하고, legacy side-effect fixture / PostgreSQL fixture는 해당 환경이 실제로 준비된 시점에 연결한다.
+
+범용 ORM/자유형 comparison language/물리 schema 자동 동등성 비교는 만들지 않는다.
+
+### D-P: PostgreSQL bootstrap
+
+#21은 **Alembic 선택을 Defer하는 이슈가 아니다.** Alembic은 이미 PostgreSQL schema history의 단일 source로 Adopt 완료됐다.
+
+현재 Defer 대상은 실제 `scripts/db/pg_test_bootstrap.py`와 disposable PostgreSQL test target/runtime wiring이다. 첫 PostgreSQL schema-changing feature가 필요로 할 때 승인된 feature scope 안에서 구현한다.
+
+그 시점에는:
+
+- `postgres-test-rw` + #20 attested `TestWriteSession`을 사용하고
+- Alembic head를 적용하며
+- clean reset/seed identity를 evidence로 남기고
+- persistent `app` DB나 일반 `DATABASE_URL`을 destructive reset target으로 재사용하지 않는다.
+
+### Track D merge 권장 순서
+
+1. #23
+2. #20
+3. #18과 #22 core 병렬 구현 가능
+4. #22 capture/adapter live integration
+5. #21 runtime bootstrap은 실제 schema-changing feature까지 Defer
+
+## Track 0 — S-001~S-011 재설계
+
+Track 0은 HANDOFF.md 지시대로 계속 **design-only**다. Track P/D 구현 계획과 별도 gate로 관리한다.
+
+다만 기존 문서의 “파일 충돌 없음” 가정은 제거한다. Track 0은 `migration/RULEBOOK.md`, `docs/02-*`, `docs/03-*`, ADR 등 shared design surface를 수정할 수 있으므로 다른 브랜치와 의미/파일 충돌이 생길 수 있다.
+
+병렬 작업 자체는 가능하지만 각 merge 직전 최신 `main` 기준으로 rebase/review하고, 이미 병합된 canonical issue design을 되돌리지 않는지 확인한다.
+
+## 통합 마일스톤
+
+| 마일스톤 | 범위 | 완료조건 |
+|---|---|---|
+| M0 | 이 계획 정합성 확정 | PR plan이 merged canonical design과 일치 |
+| M1 | P:#1/#14, D:#23 foundation | 각 이슈 acceptance criteria + 관련 테스트 통과 |
+| M2 | P:#2/#7/#8/#5, D:#20 | shared schema/state/routing/safety contract 구현 완료 |
+| M3 | P:#13/#6/#9, D:#18 + #22 core | leaf propagation 및 DB core tooling 구현 완료 |
+| M4 | P:#11, D:#22 live adapter/integration | parity judge/self-check 및 DB comparison 경로 연결 |
+| M5 | #21 runtime bootstrap | 첫 실제 PostgreSQL schema-changing feature에서만 수행 |
+
+Track 0은 M0~M5와 독립된 design-only 흐름이며, shared-file 충돌 때문에 merge 직전 최신 main 재검토가 필수다.
+
+## 구현 시작 전 체크
+
+각 이슈 구현을 시작하기 전에 다음을 확인한다.
+
+1. 해당 이슈의 canonical design 문서를 읽었는가.
+2. 이슈 본문의 stale recommendation을 그대로 구현하지 않는가.
+3. 선행 contract가 실제 `main`에 구현되어 있는가.
+4. 구현 범위가 issue acceptance criteria를 넘어서지 않는가.
+5. 새 lock-in 결정이 생기면 design gate를 다시 열도록 되어 있는가.
+6. shared file을 수정하는 다른 작업과 merge 순서가 정해져 있는가.
+
+## 검증/완료 기준
+
+- 각 이슈는 자신의 merged design 및 issue implementation comment의 acceptance criteria를 만족해야 한다.
+- `scripts/validate_scaffold.py` 및 관련 targeted tests를 실행한다.
+- DB tooling은 secret redaction, fail-closed identity/capability checks, raw artifact non-Git 기본값을 검증한다.
+- state tooling은 generation/invariant/partial-write recovery를 검증한다.
+- agent/skill/command 변경은 routing, permission, persistence ownership을 서로 침범하지 않는지 회귀 검증한다.
+- parity path는 effective configuration negative control이 성공하기 전에는 PASS를 허용하지 않는다.
 
 ## 명시적 비고
 
-- "설계게이트 필요" 항목은 각각 설계 산출물(RULEBOOK 조항/ADR/docs 갱신)만 만들고 **멈춘다**. 사용자가 해당 항목에 대해 명시적으로 "설계 끝났다, 구현 시작해라"라고 말하기 전까지 코드/스크립트를 작성하지 않는다(AGENTS.md #13).
-- P-001/P-009/P-010은 프로즈 추가라 lock-in 낮음으로 판단했으나, 실제 착수 시 사용자가 다르게 판단하면 즉시 설계게이트로 전환한다.
-- D-002는 이 계획에서 유일한 "상" lock-in 항목 — blast radius가 운영 DB 파괴이므로 다른 모든 DB 도구가 이 가드를 통과하도록 강제해야 한다는 이슈 원문 의견을 그대로 반영.
-- 이 문서 승인 후 QUEUE.md에 P-/D- 항목을 등록하는 절차(S-012 패턴과 동일)는 아직 하지 않음 — 사용자 승인 후 별도 스텝으로 처리.
+- 이 문서의 merge는 구현 승인으로 해석하지 않는다.
+- 이미 merged된 설계를 다시 “설계 대기” 상태로 돌리지 않는다. 구현 중 충돌이나 신규 결정이 발견될 때만 해당 design gate를 재개방한다.
+- Critical/High 우선순위보다 **dependency safety와 shared-contract 선행**을 우선한다.
+- #21의 runtime bootstrap은 YAGNI 원칙에 따라 실제 필요 시점까지 Defer한다.

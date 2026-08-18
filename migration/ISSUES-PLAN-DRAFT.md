@@ -194,6 +194,7 @@ Track 0은 M0~M5와 독립된 design-only 흐름이며, shared-file 충돌 때�
 ## 명시적 비고
 
 - 이 문서의 merge는 구현 승인으로 해석하지 않는다.
+- PR 제목/본문은 이 문서를 “새 설계 승인 요청”이 아니라 “merged design 기반 implementation sequencing 정합성 검토”로 설명해야 한다.
 - 이미 merged된 설계를 다시 “설계 대기” 상태로 돌리지 않는다. 구현 중 충돌이나 신규 결정이 발견될 때만 해당 design gate를 재개방한다.
 - Critical/High 우선순위보다 **dependency safety와 shared-contract 선행**을 우선한다.
 - #21의 runtime bootstrap은 YAGNI 원칙에 따라 실제 필요 시점까지 Defer한다.

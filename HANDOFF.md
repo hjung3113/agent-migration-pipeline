@@ -5,13 +5,14 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-20
 
-## Next session: Issue #14 implemented, continue Track P at (#7, #8)
+## Next session: Issue #14 done, merged; continue Track P at (#7, #8)
 
-Issue #14 (durable-state protocol) is implemented in worktree
-`wt-issue14-durable-state` (this branch) against the merged canonical design
-`docs/11-durable-state-protocol.md`, per the owner's explicit rule-13
-authorization for #14 only. All 8 implementation requirements done as one
-pass:
+Issue #14 (durable-state protocol) is implemented, reviewed, and merged to
+`main` (PR #57, squash-merged as `bc3b946`), against the merged canonical
+design `docs/11-durable-state-protocol.md`, per the owner's explicit rule-13
+authorization for #14 only. Built by opencode (glm-5.3, `--variant high`) in
+a separate worktree, same process as #1/#2. All 8 implementation
+requirements done as one pass:
 
 - `migration/STATE.md` migrated to the frontmatter schema. Honest
   normalization: `gate_result: BLOCKED` with `failed_gate_criteria:
@@ -107,7 +108,7 @@ invariants beyond list-consistency) to keep unrelated fixtures quiet; round
 dedicated COMPLETE/DONE/OQ/phase-range tests were added instead of
 overloading the shared fixture.
 
-Final state: `python3 scripts/validate_scaffold.py` exits 0;
+Final state on `main`: `python3 scripts/validate_scaffold.py` exits 0;
 `python3 -m pytest scripts/tests/ -q` — 262 passed (188 pre-existing green);
 `check_doc_links.py` / `check_oq_updates.py` pass. No design gap found that
 required stopping; the Q-004..Q-006 blocker choice (failed G0 criteria per

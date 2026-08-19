@@ -49,11 +49,21 @@ pass:
   (best-effort, single-path cells only). Issue #13 note left in the section
   comment: its coordinator persistence must reuse this logic, not add a
   second free-form path.
-- New `scripts/tests/test_durable_state.py` (63 tests, positive +
+- New `scripts/tests/test_durable_state.py` (64 tests, positive +
   negative for every check above).
 
+Owner adversarial review (before merge, matching #1/#2's diligence) found
+and fixed one real bug: the project-`status` actionability invariant only
+fired when current-phase rows made ACTIVE or BLOCKED the required value,
+so a queue with no actionable/blocked current-phase row (e.g. all DONE)
+left `status` completely unconstrained — a stale `ACTIVE`/`BLOCKED` would
+validate clean. Fixed with the missing branch (neither is justified;
+expected `PAUSED`/`COMPLETE`), plus a regression test. Also deduplicated
+`_visible_numbered`/`_visible_lines` (two near-identical fence/HTML-comment
+skippers); `_visible_lines` now delegates to `_visible_numbered`.
+
 Final state: `python3 scripts/validate_scaffold.py` exits 0;
-`python3 -m pytest scripts/tests/ -q` — 251 passed (188 pre-existing green);
+`python3 -m pytest scripts/tests/ -q` — 252 passed (188 pre-existing green);
 `check_doc_links.py` / `check_oq_updates.py` pass. No design gap found that
 required stopping; the Q-004..Q-006 blocker choice (failed G0 criteria per
 the STOP contract's "applicable gate criterion in Blocker" rule) was the

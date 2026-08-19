@@ -1,21 +1,41 @@
+---
+schema_version: 1
+generation: 1
+phase: "0"
+phase_name: "Environment and feasibility"
+status: BLOCKED
+current_gate: G0
+gate_result: BLOCKED
+failed_gate_criteria: [G0.1, G0.2, G0.3]
+active_queue_items: []
+next_queue_items: []
+blocked_queue_items: [Q-001, Q-002, Q-003]
+last_updated: "2026-08-19T15:20:46Z"
+---
+
 # Migration State
 
-- Phase: 0 — Environment scaffold
-- Status: BLOCKED — G0: G0.1, G0.2, G0.3
-- Last updated: 2026-08-18
+The frontmatter above is the machine-readable state contract
+(`docs/11-durable-state-protocol.md`); commands and validators never infer
+state from the prose below.
 
 ## Active phase gate
 
 - Gate: G0 — FOUNDATION_READY
-- Result: BLOCKED
-- Failed criteria: G0.1, G0.2, G0.3
+- Result: BLOCKED — failed criteria: G0.1, G0.2, G0.3 (authoritative values
+  live in the frontmatter above)
 - Evidence:
   - legacy repository access required for the real DLL-boundary report is not yet available;
   - `migration/evidence/dll-boundary-report.md` does not yet contain the required analyzed host-callable entry points;
   - `migration/evidence/observable-output-survey.md` does not yet contain a parity-usable observable output;
   - `docs/05-open-questions.md` still has OQ-001 and OQ-010 as `OPEN`.
 
-The canonical criterion definitions and failure protocol are in `docs/02-migration-pipeline.md`.
+Project `status: BLOCKED` is the operational derivation from the queue, not a
+copy of the gate result: every current-gate (Phase 0) queue row is `BLOCKED`
+on external legacy-source access, so no useful Phase 0 work is actionable
+right now. A failed gate alone would not force project `BLOCKED` while
+gate-enabling work remains actionable. The canonical criterion definitions
+and failure protocol are in `docs/02-migration-pipeline.md`.
 
 ## Completed
 

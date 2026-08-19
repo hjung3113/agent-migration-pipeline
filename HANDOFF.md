@@ -5,7 +5,67 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-20
 
-## Next session: Issue #2 done, continue Track P at Issue #14
+## Next session: Issue #14 implemented, continue Track P at (#7, #8)
+
+Issue #14 (durable-state protocol) is implemented in worktree
+`wt-issue14-durable-state` (this branch) against the merged canonical design
+`docs/11-durable-state-protocol.md`, per the owner's explicit rule-13
+authorization for #14 only. All 8 implementation requirements done as one
+pass:
+
+- `migration/STATE.md` migrated to the frontmatter schema. Honest
+  normalization: `gate_result: BLOCKED` with `failed_gate_criteria:
+  [G0.1, G0.2, G0.3]` (no `migration/evidence/*` artifacts exist, OQ-001/
+  OQ-010 still OPEN); project `status: BLOCKED` **derived** per docs/11
+  (every current-gate Phase 0 row is BLOCKED, none actionable — not a copy
+  of the gate result; `ACTIVE` + `gate_result: BLOCKED` remains valid when
+  gate-enabling work is actionable).
+- `migration/QUEUE.md` migrated to frontmatter + exactly one canonical
+  7-column live table (both old tables merged, no rows dropped;
+  difficulty/lock-in/review detail preserved in notes below the table).
+  Honest normalization per docs/11 migration item 6: Q-001..Q-003
+  `TODO -> BLOCKED` with `EXT:legacy-source-access`; Q-004..Q-006
+  `TODO -> BLOCKED` with `G0.1; G0.2; G0.3` (docs/02 forbids broad
+  discovery before G0 passes — this fixes finding #4's "TODO means two
+  things" defect; blockers clear when G0 is re-evaluated PASS); Q-007..Q-010
+  keep BLOCKED with prose deps moved into `Depends on`.
+- `migration-coordinator.md`: authority precedence, STOP-to-state
+  persistence table, generation transaction (equal-generation read,
+  artifacts -> QUEUE N+1 -> STATE last N+1), stale/partial-write recovery.
+- All six mutating command files got exact `## State updates` sections
+  (docs/11's six common rules + per-command row). Note: the task text said
+  "5 common rules" but docs/11 lists 6; all 6 were included per doc
+  precedence. `migration-status.md` states its read-only schema +
+  equal-generation consistency duty explicitly.
+- `scripts/validate_scaffold.py` extended (new section only; A-1/A-2
+  untouched) with `validate_durable_state()` wired into
+  `collect_validation_errors()`: frontmatter/enums/schema-version/
+  generation, gate/result/criterion relationships (embedded G0/G2/G3
+  criterion registry from docs/02), single canonical live table,
+  `Q-###`/`S-###` IDs, dependency resolution + cycles, blocker grammar
+  (`OQ-###` / gate criterion / `EXT:` / `HUMAN:` kebab), status invariants,
+  STATE list consistency vs current-phase rows, project status vs
+  actionability (PAUSED/COMPLETE exempt), DONE artifact existence
+  (best-effort, single-path cells only). Issue #13 note left in the section
+  comment: its coordinator persistence must reuse this logic, not add a
+  second free-form path.
+- New `scripts/tests/test_durable_state.py` (63 tests, positive +
+  negative for every check above).
+
+Final state: `python3 scripts/validate_scaffold.py` exits 0;
+`python3 -m pytest scripts/tests/ -q` — 251 passed (188 pre-existing green);
+`check_doc_links.py` / `check_oq_updates.py` pass. No design gap found that
+required stopping; the Q-004..Q-006 blocker choice (failed G0 criteria per
+the STOP contract's "applicable gate criterion in Blocker" rule) was the
+one judgment call, made within docs/11's already-decided blocker grammar.
+
+Next Track P order per plan: `(#7, #8) -> #5 -> #13 -> #6 -> #9 -> #11`.
+Before starting each, redo the "구현 시작 전 체크" 7-item gate in
+`ISSUES-PLAN-DRAFT.md` against current `main`. #13 implementation must
+reuse this validator/transaction logic. Rule-13 Track P/D authorization
+remains in effect and has not been revoked.
+
+## Next session (superseded): Issue #2 done, continue Track P at Issue #14
 
 Issue #2 (A-2 artifact schema/reference validation) is implemented,
 reviewed, and merged to `main` (PR #56, squash-merged as `6d60cce`).

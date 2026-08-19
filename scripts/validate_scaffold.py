@@ -317,11 +317,13 @@ ITEM_FIELD_KEYS = frozenset({"Format", "Value", "Grade", "Ref"})
 BR_REF_FIELD_KEYS = ("Behavior contract ref", "BR ref")
 
 
-def _visible_lines(text: str):
-    """Yield (lineno, line) skipping fenced code blocks and HTML comments."""
+def _visible_numbered(lines):
+    """Yield (lineno, line) skipping fenced code blocks and HTML comments,
+    preserving the caller's line numbers. Shared by `_visible_lines` (whole
+    file text) and durable-state checks (a pre-sliced body line range)."""
     in_fence = False
     in_comment = False
-    for lineno, line in enumerate(text.splitlines(), start=1):
+    for lineno, line in lines:
         stripped = line.lstrip()
         if stripped.startswith("```"):
             in_fence = not in_fence
@@ -337,6 +339,11 @@ def _visible_lines(text: str):
                 in_comment = True
             continue
         yield lineno, line
+
+
+def _visible_lines(text: str):
+    """Yield (lineno, line) skipping fenced code blocks and HTML comments."""
+    yield from _visible_numbered(enumerate(text.splitlines(), start=1))
 
 
 def _split_row(line: str) -> list[str]:
@@ -1189,29 +1196,6 @@ def _validate_state_file(root: Path) -> tuple[list[str], dict | None]:
     return errors, state
 
 
-def _visible_numbered(lines: list[tuple[int, str]]):
-    """Yield (lineno, line) skipping fenced code blocks and HTML comments,
-    preserving the caller's line numbers (body lines of a durable file)."""
-    in_fence = False
-    in_comment = False
-    for lineno, line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith("```"):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-        if in_comment:
-            if "-->" in stripped:
-                in_comment = False
-            continue
-        if stripped.startswith("<!--"):
-            if "-->" not in stripped:
-                in_comment = True
-            continue
-        yield lineno, line
-
-
 def _parse_queue_deps(raw: str) -> tuple[list[str] | None, str | None]:
     """Returns (tokens, bad_token); tokens is None when raw is malformed."""
     if raw == "-":
@@ -1512,6 +1496,15 @@ def validate_durable_state(root: Path | None = None) -> list[str]:
                          f"status {status} but no current-phase queue row is "
                          "actionable and at least one is BLOCKED (expected "
                          "BLOCKED)")
+                )
+            elif not actionable and not any_blocked:
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         f"status {status} but no current-phase queue row is "
+                         "actionable, in progress, or BLOCKED (neither ACTIVE "
+                         "nor BLOCKED is justified; expected PAUSED or "
+                         "COMPLETE)")
                 )
     return errors
 

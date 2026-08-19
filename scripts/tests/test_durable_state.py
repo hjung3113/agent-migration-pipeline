@@ -70,9 +70,16 @@ def state_text(drop: tuple[str, ...] = (), **overrides: str) -> str:
 
 
 def quiet_state(**overrides: str) -> str:
-    """STATE whose queue-ID lists start empty (for fixtures whose queue does
-    not contain the default Q-001/Q-002/Q-003 rows)."""
-    base = {"next_queue_items": "[]", "blocked_queue_items": "[]"}
+    """STATE whose queue-ID lists start empty and whose status is COMPLETE
+    (for fixtures whose queue does not contain the default Q-001/Q-002/Q-003
+    rows and has no actionable/blocked current-phase work of its own —
+    COMPLETE is the only status the actionability invariant leaves
+    unconstrained in that case)."""
+    base = {
+        "status": "COMPLETE",
+        "next_queue_items": "[]",
+        "blocked_queue_items": "[]",
+    }
     base.update(overrides)
     return state_text(**base)
 
@@ -712,6 +719,22 @@ def test_project_status_blocked_with_actionable_todo_rejected(
         "migration/STATE.md:6 [invalid-invariant] status BLOCKED but "
         "current-phase queue rows include actionable TODO/IN_PROGRESS work "
         "(expected ACTIVE)"
+    ]
+
+
+def test_project_status_stale_when_all_current_phase_rows_done_rejected(
+    tmp_path: Path,
+) -> None:
+    """No current-phase row is actionable or BLOCKED (all DONE), so neither
+    ACTIVE nor BLOCKED is justified; only PAUSED/COMPLETE would be."""
+    state = quiet_state(status="ACTIVE")
+    queue = queue_text(rows=[row("Q-001", "DONE", artifact="docs/marker.txt")])
+    errors = run(tmp_path, state, queue)
+    assert errors == [
+        "migration/STATE.md:6 [invalid-invariant] status ACTIVE but no "
+        "current-phase queue row is actionable, in progress, or BLOCKED "
+        "(neither ACTIVE nor BLOCKED is justified; expected PAUSED or "
+        "COMPLETE)"
     ]
 
 

@@ -277,6 +277,21 @@ def test_markdown_link_bullet_is_not_a_claim_marker(tmp_path: Path) -> None:
     assert run_schema(root) == []
 
 
+@pytest.mark.parametrize("checkbox", ["[ ]", "[x]", "[X]"])
+def test_task_list_checkbox_is_not_a_claim_marker(tmp_path: Path, checkbox: str) -> None:
+    contract = (
+        "# Behavior Contract: alpha\n\n## Unresolved questions\n\n"
+        f"- {checkbox} confirm with legacy owner\n\n"
+        "## Business rules\n\n"
+        "| Rule ID | Basis | Rule | Evidence | Grade |\n"
+        "|---|---|---|---|---|\n"
+        "| BR-001 | observed | rule | e1 | ? |\n"
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, contract_text=contract)
+    assert run_schema(root) == []
+
+
 # --- evidence records ----------------------------------------------------
 
 

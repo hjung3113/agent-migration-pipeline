@@ -307,6 +307,9 @@ HEADING2_RE = re.compile(r"^#{2,6}\s+(.*?)\s*$")
 KV_FIELD_RE = re.compile(r"^-\s+([^:]+):\s*(.*)$")
 CLAIM_MARKER_RE = re.compile(r"^\s*[-*]\s+\[([^\]]+)\]")
 MARKDOWN_LINK_RE = re.compile(r"^\s*[-*]\s+\[[^\]]*\]\(")
+# Markdown task-list checkbox states (`- [ ]`, `- [x]`, `- [X]`) are list
+# syntax, not provenance markers, and must not be mistaken for one.
+TASK_LIST_MARKER_RE = re.compile(r"^[ xX]?$")
 ITEM_FIELD_KEYS = frozenset({"Format", "Value", "Grade", "Ref"})
 # Optional dedicated BR-reference field names on evidence records. The
 # current evidence template has none; when an instance declares one it is
@@ -537,6 +540,8 @@ def validate_behavior_contract(
         if not match or MARKDOWN_LINK_RE.match(line):
             continue
         marker = match.group(1)
+        if TASK_LIST_MARKER_RE.fullmatch(marker):
+            continue
         if marker not in PROVENANCE_VALUES:
             errors.append(
                 _err(

@@ -5,13 +5,14 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-20
 
-## Next session: Issue #2 A-2 implemented on branch, needs review/merge; then Issue #14
+## Next session: Issue #2 done, continue Track P at Issue #14
 
-Issue #2 (A-2 artifact schema/reference validation) is implemented on
-branch `hjung3113/issue2-schema-validation-low` (not yet reviewed/merged —
-no PR opened). It extends `scripts/validate_scaffold.py` per the merged
-canonical design `docs/issue-2-artifact-schema-validation.md`: closed
-enums (grades, provenance, source types, verification results, OQ
+Issue #2 (A-2 artifact schema/reference validation) is implemented,
+reviewed, and merged to `main` (PR #56, squash-merged as `6d60cce`).
+Built by opencode (glm-5.3, `--variant low`) in a separate Orca worktree,
+same process as Issue #1. It extends `scripts/validate_scaffold.py` per
+the merged canonical design `docs/issue-2-artifact-schema-validation.md`:
+closed enums (grades, provenance, source types, verification results, OQ
 statuses), `BR-###`/`OQ-###` ID formats with per-file BR uniqueness and
 global OQ uniqueness, structured reference resolution (BR refs resolve in
 the same feature's behavior contract; feature-card `## Open questions`
@@ -27,13 +28,26 @@ Repository normalization done (no exemptions added): four `Grade: N/A` →
 `migration/features/synthetic-demo/characterization-record.md`, and
 `verification.md` `Result:` reduced to exact `PASS` with the scope note
 moved to a continuation line. `docs/05-open-questions.md` passed as-is.
-Tests: new `scripts/tests/test_validate_schema.py`; full suite
-`python3 -m pytest scripts/tests/ -q` = 185 passed;
-`python3 scripts/validate_scaffold.py` exits 0 (A-1 + A-2 clean).
 
-Next Track P order per plan: after #2 merges -> #14 -> (#7, #8) -> #5 ->
-#13 -> #6 -> #9 -> #11. Track P/D implementation authorization from
-AGENTS.md rule 13 is still in effect and has not been revoked.
+Adversarial review (owner review before merge, matching PR #55's
+diligence) found and fixed one real bug: `CLAIM_MARKER_RE` matched any
+bracketed list bullet, so a standard Markdown task-list checkbox
+(`- [ ]`, `- [x]`) was misclassified as an invalid `[observed]`/
+`[inferred]` provenance marker. Fixed by excluding checkbox states from
+the claim-marker check; regression test added
+(`test_task_list_checkbox_is_not_a_claim_marker`).
+
+Final state on `main`: `python3 scripts/validate_scaffold.py` exits 0
+(A-1 + A-2 clean); `python3 -m pytest scripts/tests/ -q` — 188 passed.
+No new lock-in design decisions were made; the checkbox fix was within
+the merged A-2 design's already-decided scope (claim-marker check exists
+only to validate provenance markers), so no design gate was reopened.
+
+Next Track P order per plan: `#14 -> (#7, #8) -> #5 -> #13 -> #6 -> #9 ->
+#11`. Track P/D implementation authorization from AGENTS.md rule 13 is
+still in effect and has not been revoked. Before starting #14, redo the
+"구현 시작 전 체크" 7-item gate in `ISSUES-PLAN-DRAFT.md` against current
+`main` — do not assume the plan's file-line references are still exact.
 
 ## Next session (superseded): Issue #1 done, continue Track P at Issue #2
 

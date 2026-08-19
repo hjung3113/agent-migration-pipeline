@@ -35,7 +35,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.validate_scaffold import ROOT, validate_durable_state
+from scripts.validate_scaffold import ROOT, validate_durable_state, validate_oq_registry
 
 QUEUE_HEADER = (
     "| ID | Status | Phase | Depends on | Blocker | Work item | "
@@ -70,13 +70,14 @@ def state_text(drop: tuple[str, ...] = (), **overrides: str) -> str:
 
 
 def quiet_state(**overrides: str) -> str:
-    """STATE whose queue-ID lists start empty and whose status is COMPLETE
+    """STATE whose queue-ID lists start empty and whose status is PAUSED
     (for fixtures whose queue does not contain the default Q-001/Q-002/Q-003
-    rows and has no actionable/blocked current-phase work of its own —
-    COMPLETE is the only status the actionability invariant leaves
-    unconstrained in that case)."""
+    rows and is not itself testing the actionability or COMPLETE invariant —
+    PAUSED is an explicit-human-only status with no other invariant, unlike
+    COMPLETE which additionally requires current_gate/gate_result: NONE and
+    every queue row DONE)."""
     base = {
-        "status": "COMPLETE",
+        "status": "PAUSED",
         "next_queue_items": "[]",
         "blocked_queue_items": "[]",
     }
@@ -151,9 +152,12 @@ def make_repo(
 
 
 def run(
-    tmp_path: Path, state: str | None = None, queue: str | None = None
+    tmp_path: Path,
+    state: str | None = None,
+    queue: str | None = None,
+    oq_ids: set[str] | None = None,
 ) -> list[str]:
-    return validate_durable_state(make_repo(tmp_path, state, queue))
+    return validate_durable_state(make_repo(tmp_path, state, queue), oq_ids)
 
 
 # --- positive cases ----------------------------------------------------------
@@ -738,9 +742,133 @@ def test_project_status_stale_when_all_current_phase_rows_done_rejected(
     ]
 
 
+# --- PR #57 review follow-up: OQ blocker resolution, DONE invariant,
+# COMPLETE invariant, phase-range matching -----------------------------------
+
+
+def test_oq_blocker_not_in_registry_rejected(tmp_path: Path) -> None:
+    queue = queue_text(rows=[row("Q-001", "BLOCKED", blocker="OQ-999")])
+    errors = run(tmp_path, state=quiet_state(blocked_queue_items="[Q-001]"),
+                 queue=queue, oq_ids={"OQ-001"})
+    assert errors == [
+        "migration/QUEUE.md:10 [missing-ref] `Q-001` Blocker `OQ-999` does "
+        "not resolve in docs/05-open-questions.md"
+    ]
+
+
+def test_oq_blocker_in_registry_passes(tmp_path: Path) -> None:
+    queue = queue_text(rows=[row("Q-001", "BLOCKED", blocker="OQ-001")])
+    errors = run(tmp_path, state=quiet_state(blocked_queue_items="[Q-001]"),
+                 queue=queue, oq_ids={"OQ-001"})
+    assert errors == []
+
+
+def test_oq_blocker_resolution_skipped_without_registry(tmp_path: Path) -> None:
+    """oq_ids=None (caller didn't supply a registry) skips OQ resolution
+    instead of treating every OQ blocker as unresolved."""
+    queue = queue_text(rows=[row("Q-001", "BLOCKED", blocker="OQ-999")])
+    errors = run(tmp_path, state=quiet_state(blocked_queue_items="[Q-001]"),
+                 queue=queue)
+    assert errors == []
+
+
+def test_done_row_with_unmet_dependency_rejected(tmp_path: Path) -> None:
+    queue = queue_text(rows=[
+        row("Q-001", "TODO"),
+        row("Q-002", "DONE", deps="Q-001", artifact="docs/marker.txt"),
+    ])
+    errors = run(tmp_path, state=quiet_state(next_queue_items="[Q-001]"),
+                 queue=queue)
+    assert errors == [
+        "migration/QUEUE.md:11 [invalid-invariant] `Q-002` is DONE with an "
+        "unmet dependency or active Blocker; DONE is terminal and requires "
+        "every dependency DONE and Blocker `-` (the normal IN_PROGRESS -> "
+        "DONE transition already requires this)"
+    ]
+
+
+def test_done_row_with_blocker_rejected(tmp_path: Path) -> None:
+    queue = queue_text(rows=[
+        row("Q-001", "DONE", blocker="EXT:legacy-source-access",
+            artifact="docs/marker.txt"),
+    ])
+    errors = run(tmp_path, state=quiet_state(), queue=queue)
+    assert errors == [
+        "migration/QUEUE.md:10 [invalid-invariant] `Q-001` is DONE with an "
+        "unmet dependency or active Blocker; DONE is terminal and requires "
+        "every dependency DONE and Blocker `-` (the normal IN_PROGRESS -> "
+        "DONE transition already requires this)"
+    ]
+
+
+def test_complete_status_all_done_and_gate_none_passes(tmp_path: Path) -> None:
+    state = quiet_state(
+        status="COMPLETE", phase='"1"', current_gate="NONE", gate_result="NONE",
+        failed_gate_criteria="[]",
+    )
+    queue = queue_text(rows=[row("Q-001", "DONE", artifact="docs/marker.txt")])
+    assert run(tmp_path, state, queue) == []
+
+
+def test_complete_status_with_open_gate_rejected(tmp_path: Path) -> None:
+    state = quiet_state(status="COMPLETE")  # base current_gate G0, gate_result BLOCKED
+    queue = queue_text(rows=[row("Q-001", "DONE", artifact="docs/marker.txt")])
+    errors = run(tmp_path, state, queue)
+    assert errors == [
+        "migration/STATE.md:6 [invalid-invariant] status COMPLETE requires "
+        "current_gate: NONE (no further gate applies); got `G0`",
+        "migration/STATE.md:6 [invalid-invariant] status COMPLETE requires "
+        "gate_result: NONE; got `BLOCKED`",
+        "migration/STATE.md:6 [invalid-invariant] status COMPLETE requires "
+        "an empty failed_gate_criteria; got ['G0.1', 'G0.2']",
+    ]
+
+
+def test_complete_status_with_unfinished_row_rejected(tmp_path: Path) -> None:
+    state = quiet_state(
+        status="COMPLETE", current_gate="NONE", gate_result="NONE",
+        failed_gate_criteria="[]",
+    )
+    queue = queue_text(rows=[
+        row("Q-001", "DONE", artifact="docs/marker.txt"),
+        row("Q-002", "TODO", phase="1"),
+    ])
+    errors = run(tmp_path, state, queue)
+    assert errors == [
+        "migration/STATE.md:6 [invalid-invariant] status COMPLETE requires "
+        "every queue row DONE; not DONE: ['Q-002']"
+    ]
+
+
+def test_phase_range_row_relevant_when_state_phase_inside_it(tmp_path: Path) -> None:
+    """A `5-6` combined review+verification row must count as current-phase
+    work when STATE.phase is 5 or 6, not just on an exact string match."""
+    state = state_text(
+        phase='"6"', status="BLOCKED", next_queue_items="[]",
+        blocked_queue_items="[Q-010]",
+    )
+    queue = queue_text(rows=[
+        row("Q-010", "BLOCKED", phase="5-6", blocker="OQ-001"),
+    ])
+    assert run(tmp_path, state, queue) == []
+
+
+def test_phase_range_row_not_relevant_when_state_phase_outside_it(
+    tmp_path: Path,
+) -> None:
+    state = quiet_state(phase='"2"')
+    queue = queue_text(rows=[
+        row("Q-010", "BLOCKED", phase="5-6", blocker="OQ-001"),
+    ])
+    assert run(tmp_path, state, queue) == []
+
+
 # --- real tree ---------------------------------------------------------------
 
 
 def test_real_repo_durable_state_is_consistent() -> None:
-    """The migrated migration/STATE.md + migration/QUEUE.md must validate."""
-    assert validate_durable_state(ROOT) == []
+    """The migrated migration/STATE.md + migration/QUEUE.md must validate,
+    including OQ blocker resolution against the real OQ registry (same
+    inputs `collect_validation_errors()`/CI actually use)."""
+    _oq_errors, oq_ids = validate_oq_registry(ROOT)
+    assert validate_durable_state(ROOT, oq_ids) == []

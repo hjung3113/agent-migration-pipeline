@@ -1331,6 +1331,23 @@ def _validate_queue_file(root: Path) -> tuple[list[str], dict | None]:
     return errors, queue
 
 
+PHASE_RANGE_RE = re.compile(r"^(\d+)-(\d+)$")
+
+
+def _phase_matches(row_phase: str, current_phase: str) -> bool:
+    """A queue row's `Phase` may be a single stable phase identifier (exact
+    match) or a hyphenated numeric range for a row spanning multiple phases
+    (e.g. `5-6` for a combined review+verification row); it is
+    current-phase-relevant when `current_phase` falls inside that range."""
+    if row_phase == current_phase:
+        return True
+    match = PHASE_RANGE_RE.fullmatch(row_phase)
+    if not match or not current_phase.isdigit():
+        return False
+    low, high = int(match.group(1)), int(match.group(2))
+    return low <= int(current_phase) <= high
+
+
 def _depends_on_cycle(start: str, rows: dict[str, dict]) -> bool:
     stack = list(rows[start]["deps"])
     seen: set[str] = set()
@@ -1345,7 +1362,9 @@ def _depends_on_cycle(start: str, rows: dict[str, dict]) -> bool:
     return False
 
 
-def validate_durable_state(root: Path | None = None) -> list[str]:
+def validate_durable_state(
+    root: Path | None = None, oq_ids: set[str] | None = None
+) -> list[str]:
     """Issue #14 durable-state validation for STATE.md + QUEUE.md.
 
     Covers frontmatter schema, enums, gate/result/criterion relationships,
@@ -1353,7 +1372,14 @@ def validate_durable_state(root: Path | None = None) -> list[str]:
     grammar and invariants, STATE/QUEUE generation equality, STATE summary
     lists versus current-phase queue rows, project status versus queue
     actionability, and DONE completion-artifact existence (best effort, only
-    for cells that are unambiguously a single repo path)."""
+    for cells that are unambiguously a single repo path).
+
+    `oq_ids` is the known-good OQ registry (from `validate_oq_registry`); a
+    `Blocker: OQ-###` reference that isn't a real registry entry is a
+    dangling reference, same as an unresolved `Depends on` queue ID. When
+    the caller can't supply it (e.g. isolated tests), OQ blocker resolution
+    is skipped rather than treated as an automatic failure.
+    """
     base = ROOT if root is None else root
     state_errors, state = _validate_state_file(base)
     queue_errors, queue = _validate_queue_file(base)
@@ -1384,6 +1410,14 @@ def validate_durable_state(root: Path | None = None) -> list[str]:
                          f"`{row_id}` depends on `{dep}` which is not a live "
                          "queue row")
                 )
+        if oq_ids is not None:
+            for blocker in row["blockers"]:
+                if OQ_ID_RE.fullmatch(blocker) and blocker not in oq_ids:
+                    errors.append(
+                        _err(QUEUE_PATH, row["lineno"], "missing-ref",
+                             f"`{row_id}` Blocker `{blocker}` does not "
+                             f"resolve in {OQ_REGISTRY_PATH}")
+                    )
     for row_id in rows:
         if _depends_on_cycle(row_id, rows):
             errors.append(
@@ -1421,6 +1455,15 @@ def validate_durable_state(root: Path | None = None) -> list[str]:
                      "or blocker reference")
             )
         elif status == "DONE":
+            if has_blocker or not deps_done:
+                errors.append(
+                    _err(QUEUE_PATH, row["lineno"], "invalid-invariant",
+                         f"`{row_id}` is DONE with an unmet dependency or "
+                         "active Blocker; DONE is terminal and requires "
+                         "every dependency DONE and Blocker `-` (the normal "
+                         "IN_PROGRESS -> DONE transition already requires "
+                         "this)")
+                )
             artifact = row["artifact"].strip()
             if (
                 "/" in artifact
@@ -1438,7 +1481,7 @@ def validate_durable_state(root: Path | None = None) -> list[str]:
         relevant = {
             row_id: row
             for row_id, row in rows.items()
-            if row["phase"] == phase and row["status"] in QUEUE_STATUSES
+            if _phase_matches(row["phase"], phase) and row["status"] in QUEUE_STATUSES
         }
         expected: dict[str, set[str]] = {
             "active_queue_items": {
@@ -1506,6 +1549,42 @@ def validate_durable_state(root: Path | None = None) -> list[str]:
                          "nor BLOCKED is justified; expected PAUSED or "
                          "COMPLETE)")
                 )
+        if status == "COMPLETE":
+            gate = state.get("current_gate")
+            result = state.get("gate_result")
+            criteria = state.get("failed_gate_criteria")
+            if gate is not None and gate != "NONE":
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         f"status COMPLETE requires current_gate: NONE "
+                         f"(no further gate applies); got `{gate}`")
+                )
+            if result is not None and result != "NONE":
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         f"status COMPLETE requires gate_result: NONE; got "
+                         f"`{result}`")
+                )
+            if criteria is not None and criteria:
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         "status COMPLETE requires an empty "
+                         f"failed_gate_criteria; got {sorted(criteria)}")
+                )
+            unfinished = sorted(
+                row_id for row_id, row in rows.items()
+                if row["status"] in ("TODO", "IN_PROGRESS", "BLOCKED")
+            )
+            if unfinished:
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         "status COMPLETE requires every queue row DONE; "
+                         f"not DONE: {unfinished}")
+                )
     return errors
 
 
@@ -1517,7 +1596,7 @@ def collect_validation_errors(root: Path | None = None) -> list[str]:
         validate_features(base)
         + oq_errors
         + validate_feature_schemas(base, oq_ids)
-        + validate_durable_state(base)
+        + validate_durable_state(base, oq_ids)
     )
 
 

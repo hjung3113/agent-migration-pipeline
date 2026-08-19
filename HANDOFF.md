@@ -49,21 +49,66 @@ pass:
   (best-effort, single-path cells only). Issue #13 note left in the section
   comment: its coordinator persistence must reuse this logic, not add a
   second free-form path.
-- New `scripts/tests/test_durable_state.py` (64 tests, positive +
+- New `scripts/tests/test_durable_state.py` (74 tests, positive +
   negative for every check above).
 
-Owner adversarial review (before merge, matching #1/#2's diligence) found
-and fixed one real bug: the project-`status` actionability invariant only
-fired when current-phase rows made ACTIVE or BLOCKED the required value,
-so a queue with no actionable/blocked current-phase row (e.g. all DONE)
-left `status` completely unconstrained — a stale `ACTIVE`/`BLOCKED` would
-validate clean. Fixed with the missing branch (neither is justified;
-expected `PAUSED`/`COMPLETE`), plus a regression test. Also deduplicated
-`_visible_numbered`/`_visible_lines` (two near-identical fence/HTML-comment
-skippers); `_visible_lines` now delegates to `_visible_numbered`.
+Owner adversarial review (before merge, matching #1/#2's diligence), two
+rounds, both pushed to PR #57 before any merge:
+
+Round 1 found and fixed one real bug: the project-`status` actionability
+invariant only fired when current-phase rows made ACTIVE or BLOCKED the
+required value, so a queue with no actionable/blocked current-phase row
+(e.g. all DONE) left `status` completely unconstrained — a stale
+`ACTIVE`/`BLOCKED` would validate clean. Fixed with the missing branch
+(neither is justified; expected `PAUSED`/`COMPLETE`), plus a regression
+test. Also deduplicated `_visible_numbered`/`_visible_lines` (two
+near-identical fence/HTML-comment skippers); `_visible_lines` now delegates
+to `_visible_numbered`.
+
+Round 2 was a formal PR review (5 findings) judged individually against
+docs/11 rather than applied wholesale; 4 were real, 1 was already handled:
+
+- **[Fixed]** `Blocker: OQ-###` syntax was checked but never resolved
+  against `docs/05-open-questions.md`, so `OQ-999` validated the same as a
+  real OQ. `validate_durable_state()` now takes an `oq_ids` param (the same
+  set `validate_oq_registry()`/`collect_validation_errors()` already
+  compute) and flags unresolved OQ blockers as `missing-ref`; skipped (not
+  auto-failed) when the caller doesn't supply a registry.
+- **[Fixed]** `DONE` rows weren't checked against the dependency/blocker
+  invariants that already applied to `TODO`/`IN_PROGRESS`/`BLOCKED`, so a
+  `DONE` row could still declare an unmet dependency or an active blocker.
+  Added the same `invalid-invariant` check DONE was missing.
+- **[Fixed]** `status: COMPLETE` was fully exempt from the actionability
+  check with no invariant of its own, so it could coexist with an open gate
+  or unfinished queue rows. Added: COMPLETE requires `current_gate: NONE`,
+  `gate_result: NONE`, empty `failed_gate_criteria`, and every queue row
+  (not just current-phase) `DONE`.
+- **[Fixed]** The `relevant` current-phase row computation used exact
+  string match on `Phase`, so a combined-phase row like Q-010's `5-6` would
+  silently drop out of `active_queue_items`/`next_queue_items`/
+  `blocked_queue_items`/actionability once `STATE.phase` became `5` or `6`
+  (this is inert today — current phase is `0` — but was a real latent bug).
+  Added `_phase_matches()`: exact match, or state phase inside a
+  `low-high` numeric range.
+- **[Already covered, not reopened]** The reviewer's concurrent
+  stale-write finding (revision identity beyond generation-equality) named
+  a real docs/11 requirement, but the coordinator's "Generation transaction"
+  section already had a "stop on... revision change detected after initial
+  read" line; that line was vague prose with no deterministic mechanism.
+  Made it concrete instead of writing new logic: `git hash-object` of
+  `STATE.md`/`QUEUE.md` captured at transaction start, re-checked
+  immediately before each write (before `QUEUE.md` at old step 3, before
+  `STATE.md` at old step 5), abort+restart the transaction on mismatch.
+
+quiet_state()'s default status moved from `COMPLETE` (chosen in round 1,
+now itself invariant-bearing) to `PAUSED` (the only status with zero
+invariants beyond list-consistency) to keep unrelated fixtures quiet; round
+1's `COMPLETE`-specific regression test was updated accordingly, and
+dedicated COMPLETE/DONE/OQ/phase-range tests were added instead of
+overloading the shared fixture.
 
 Final state: `python3 scripts/validate_scaffold.py` exits 0;
-`python3 -m pytest scripts/tests/ -q` — 252 passed (188 pre-existing green);
+`python3 -m pytest scripts/tests/ -q` — 262 passed (188 pre-existing green);
 `check_doc_links.py` / `check_oq_updates.py` pass. No design gap found that
 required stopping; the Q-004..Q-006 blocker choice (failed G0 criteria per
 the STOP contract's "applicable gate criterion in Blocker" rule) was the

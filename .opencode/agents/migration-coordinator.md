@@ -55,20 +55,41 @@ shared-state writes (never the specialist):
 
 ### Generation transaction (every queue/project-state mutation)
 
-1. Read `migration/STATE.md` and `migration/QUEUE.md` together and require
+docs/11 requires more than an equal-generation read: it requires retaining
+the *observed blob/revision identity*, or re-reading immediately before
+write, so a concurrent writer is never silently overwritten. The concrete,
+deterministic mechanism in this repository is the tracked Git blob hash of
+each file (`git hash-object migration/STATE.md migration/QUEUE.md`, or
+equivalently `git diff --quiet -- migration/STATE.md migration/QUEUE.md`
+against the hash captured at step 1) — not merely re-reading `generation`,
+which cannot distinguish "unchanged" from "another writer produced the same
+value coincidentally" and cannot detect a same-generation edit at all.
+
+1. Read `migration/STATE.md` and `migration/QUEUE.md` together, require
    equal starting generation `N` (a mismatch is a partial write — see
-   recovery below; do not build on it).
+   recovery below; do not build on it), and record the current Git blob
+   hash of both files as the observed revision.
 2. Persist feature/evidence/open-question/gate/STOP artifacts first.
-3. Write `QUEUE.md` with generation `N+1` (mutated rows, normalized
-   `Depends on`/`Blocker` fields).
-4. Derive the project summary from the newly written specific facts
+3. Immediately before writing `QUEUE.md`, re-hash both files and compare
+   against the step-1 observed revision. If either hash changed, a
+   concurrent writer landed — abort the transaction without writing
+   `QUEUE.md`/`STATE.md`, discard nothing already persisted in step 2, and
+   restart the transaction from step 1 against the new state.
+4. Write `QUEUE.md` with generation `N+1` (mutated rows, normalized
+   `Depends on`/`Blocker` fields), then re-record its new blob hash as part
+   of the observed revision for step 5's check.
+5. Derive the project summary from the newly written specific facts
    (`status` from current-gate queue actionability; never copy the selected
    row's status or `gate_result` into `status`).
-5. Write `migration/STATE.md` last with the same generation `N+1`
+6. Immediately before writing `STATE.md`, re-hash `QUEUE.md` and confirm it
+   still matches the hash recorded in step 4 (nothing may write `QUEUE.md`
+   between steps 4 and 6 in this protocol). If it changed, abort without
+   writing `STATE.md` and restart from step 1.
+7. Write `migration/STATE.md` last with the same generation `N+1`
    (`gate_result`/`failed_gate_criteria` kept separate from `status`;
    refresh `active_queue_items`/`next_queue_items`/`blocked_queue_items`
    from current-gate rows).
-6. Prefer one Git commit for the complete transaction.
+8. Prefer one Git commit for the complete transaction.
 
 ### Stale/partial-write detection and recovery
 
@@ -84,9 +105,11 @@ Before starting new work, compare generations:
   history plus specific durable artifacts; never guess the intended queue
   mutation.
 
-Also stop on malformed schema, unsupported `schema_version`, or a revision
-change detected after the initial read. `python3 scripts/validate_scaffold.py`
-statically enforces the same schema/invariant/generation checks.
+Also stop on malformed schema, unsupported `schema_version`, or a Git blob
+hash change detected by the re-hash checks in the "Generation transaction"
+steps above (abort/restart, per those steps, rather than writing over a
+concurrent update). `python3 scripts/validate_scaffold.py` statically
+enforces the same schema/invariant/generation checks.
 
 ## Procedure
 

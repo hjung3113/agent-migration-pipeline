@@ -5,7 +5,8 @@ already performed and recorded in `DRY-RUN-REPORT.md` during the S-011
 pipeline dry-run (2026-08-17). No new verification was run for this file.
 
 - Date: 2026-08-17 (dry-run; consolidated during Issue #1 normalization)
-- Result: PASS (process dry-run scope only — see "Unverified behavior")
+- Result: PASS
+  (process dry-run scope only — see "Unverified behavior")
 - Judge self-check: PASS
 
 > `Result` must be `BLOCKED` unless `Judge self-check` is `PASS`. Judge

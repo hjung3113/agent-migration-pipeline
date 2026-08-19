@@ -3,9 +3,39 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-19
+Last updated: 2026-08-20
 
-## Next session: Issue #1 done, continue Track P at Issue #2
+## Next session: Issue #2 A-2 implemented on branch, needs review/merge; then Issue #14
+
+Issue #2 (A-2 artifact schema/reference validation) is implemented on
+branch `hjung3113/issue2-schema-validation-low` (not yet reviewed/merged —
+no PR opened). It extends `scripts/validate_scaffold.py` per the merged
+canonical design `docs/issue-2-artifact-schema-validation.md`: closed
+enums (grades, provenance, source types, verification results, OQ
+statuses), `BR-###`/`OQ-###` ID formats with per-file BR uniqueness and
+global OQ uniqueness, structured reference resolution (BR refs resolve in
+the same feature's behavior contract; feature-card `## Open questions`
+bullet OQ refs and `### OQ-###` resolved headings resolve in the global
+registry), H1-based evidence/characterization instance discovery with
+templates/fenced-code/prose never treated as instances, duplicate machine
+keys rejected, and all diagnostics aggregated as `path:line [category]`.
+A-1 lifecycle parsing untouched; Issue #9 revision-aware checks and
+queue/Q-### validation intentionally not implemented (Non-goals).
+
+Repository normalization done (no exemptions added): four `Grade: N/A` →
+`Grade: ?` for the `none observed` capture items in
+`migration/features/synthetic-demo/characterization-record.md`, and
+`verification.md` `Result:` reduced to exact `PASS` with the scope note
+moved to a continuation line. `docs/05-open-questions.md` passed as-is.
+Tests: new `scripts/tests/test_validate_schema.py`; full suite
+`python3 -m pytest scripts/tests/ -q` = 185 passed;
+`python3 scripts/validate_scaffold.py` exits 0 (A-1 + A-2 clean).
+
+Next Track P order per plan: after #2 merges -> #14 -> (#7, #8) -> #5 ->
+#13 -> #6 -> #9 -> #11. Track P/D implementation authorization from
+AGENTS.md rule 13 is still in effect and has not been revoked.
+
+## Next session (superseded): Issue #1 done, continue Track P at Issue #2
 
 Implementation authorization from AGENTS.md rule 13 for Track P / Track D
 (`migration/ISSUES-PLAN-DRAFT.md`) is still in effect — this is not a

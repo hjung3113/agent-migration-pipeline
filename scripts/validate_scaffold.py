@@ -276,17 +276,614 @@ def validate_features(root: Path | None = None) -> list[str]:
     return errors
 
 
+# A-2 artifact schema/reference validation:
+# docs/issue-2-artifact-schema-validation.md. Closed value domains, ID
+# formats/scopes, and explicitly structured references only — no semantic
+# completeness, no prose scanning, no revision-aware grade history (#9).
+
+BR_ID_RE = re.compile(r"^BR-\d{3}$")
+OQ_ID_RE = re.compile(r"^OQ-\d{3}$")
+OQ_ID_PREFIX_RE = re.compile(r"^OQ-[0-9A-Za-z]+$")
+GRADES = ("A", "B", "C", "D", "?")
+ITEM_GRADES = GRADES + ("N/A",)
+PROVENANCE_VALUES = ("observed", "inferred")
+SOURCE_TYPES = (
+    "automated-test",
+    "runtime",
+    "db",
+    "log",
+    "callback",
+    "source",
+    "manual",
+    "other",
+)
+VERIFICATION_RESULTS = ("PASS", "FAIL", "PARTIAL", "BLOCKED")
+OQ_STATUSES = ("OPEN", "CONFIRMED", "NOT-APPLICABLE", "DEFERRED")
+OQ_REGISTRY_PATH = "docs/05-open-questions.md"
+EVIDENCE_H1_RE = re.compile(r"^Evidence:\s*(.*)$")
+CHARACTERIZATION_H1_RE = re.compile(r"^Characterization:\s*(.*)$")
+OQ_HEADING_RE = re.compile(r"^###\s+OQ-(\S+)")
+HEADING2_RE = re.compile(r"^#{2,6}\s+(.*?)\s*$")
+KV_FIELD_RE = re.compile(r"^-\s+([^:]+):\s*(.*)$")
+CLAIM_MARKER_RE = re.compile(r"^\s*[-*]\s+\[([^\]]+)\]")
+MARKDOWN_LINK_RE = re.compile(r"^\s*[-*]\s+\[[^\]]*\]\(")
+# Markdown task-list checkbox states (`- [ ]`, `- [x]`, `- [X]`) are list
+# syntax, not provenance markers, and must not be mistaken for one.
+TASK_LIST_MARKER_RE = re.compile(r"^[ xX]?$")
+ITEM_FIELD_KEYS = frozenset({"Format", "Value", "Grade", "Ref"})
+# Optional dedicated BR-reference field names on evidence records. The
+# current evidence template has none; when an instance declares one it is
+# a structured reference and must resolve.
+BR_REF_FIELD_KEYS = ("Behavior contract ref", "BR ref")
+
+
+def _visible_lines(text: str):
+    """Yield (lineno, line) skipping fenced code blocks and HTML comments."""
+    in_fence = False
+    in_comment = False
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if in_comment:
+            if "-->" in stripped:
+                in_comment = False
+            continue
+        if stripped.startswith("<!--"):
+            if "-->" not in stripped:
+                in_comment = True
+            continue
+        yield lineno, line
+
+
+def _split_row(line: str) -> list[str]:
+    s = line.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return [cell.strip() for cell in s.split("|")]
+
+
+def _is_separator_row(cells: list[str]) -> bool:
+    return bool(cells) and all(
+        re.fullmatch(r":?-+:?", cell) for cell in cells if cell
+    )
+
+
+def _parse_tables(lines: list[tuple[int, str]]):
+    """Yield (header_lineno, headers, rows); rows are (lineno, cells)."""
+    i = 0
+    while i < len(lines):
+        if not lines[i][1].lstrip().startswith("|"):
+            i += 1
+            continue
+        j = i + 1
+        if (
+            j >= len(lines)
+            or not lines[j][1].lstrip().startswith("|")
+            or not _is_separator_row(_split_row(lines[j][1]))
+        ):
+            i += 1
+            continue
+        headers = _split_row(lines[i][1])
+        rows: list[tuple[int, list[str]]] = []
+        k = j + 1
+        while k < len(lines) and lines[k][1].lstrip().startswith("|"):
+            rows.append((lines[k][0], _split_row(lines[k][1])))
+            k += 1
+        yield lines[i][0], headers, rows
+        i = k
+
+
+def _cell(headers: list[str], cells: list[str], name: str) -> str | None:
+    try:
+        index = headers.index(name)
+    except ValueError:
+        return None
+    if index >= len(cells):
+        return ""
+    return cells[index]
+
+
+def _split_sections(
+    lines: list[tuple[int, str]]
+) -> tuple[list[tuple[int, str]], list[tuple[str, list[tuple[int, str]]]]]:
+    """Split into (header block, sections) at level-2+ headings.
+
+    The header block is everything before the first such heading; section
+    titles are lowercased for case-insensitive lookup.
+    """
+    header: list[tuple[int, str]] = []
+    sections: list[tuple[str, list[tuple[int, str]]]] = []
+    title: str | None = None
+    current: list[tuple[int, str]] = []
+    for lineno, line in lines:
+        match = HEADING2_RE.match(line)
+        if match:
+            if title is not None:
+                sections.append((title, current))
+            title = match.group(1).strip().lower()
+            current = []
+        elif title is None:
+            header.append((lineno, line))
+        else:
+            current.append((lineno, line))
+    if title is not None:
+        sections.append((title, current))
+    return header, sections
+
+
+def _parse_kv(lines: list[tuple[int, str]]) -> list[tuple[int, str, str]]:
+    """Parse `- Key: value` fields; returns (lineno, key, value) triples."""
+    fields = []
+    for lineno, line in lines:
+        match = KV_FIELD_RE.match(line)
+        if match:
+            fields.append((lineno, match.group(1).strip(), match.group(2).strip()))
+    return fields
+
+
+def _unique_fields(
+    fields: list[tuple[int, str, str]]
+) -> tuple[dict[str, tuple[int, str]], list[tuple[int, str]]]:
+    """Map keys to (lineno, value); duplicates are reported, never merged."""
+    seen: dict[str, tuple[int, str]] = {}
+    duplicates: list[tuple[int, str]] = []
+    for lineno, key, value in fields:
+        if key in seen:
+            duplicates.append((lineno, key))
+        else:
+            seen[key] = (lineno, value)
+    return seen, duplicates
+
+
+def _err(rel: str, lineno: int, category: str, message: str) -> str:
+    return f"{rel}:{lineno} [{category}] {message}"
+
+
+def _check_br_reference(
+    rel: str, lineno: int, value: str, br_ids: dict[str, int], errors: list[str]
+) -> None:
+    if not BR_ID_RE.fullmatch(value):
+        errors.append(_err(rel, lineno, "invalid-id", f"`{value}`; expected BR-###"))
+    elif value not in br_ids:
+        errors.append(
+            _err(
+                rel,
+                lineno,
+                "missing-ref",
+                f"`{value}` does not resolve in this feature's behavior-contract.md",
+            )
+        )
+
+
+def _validate_grade_cells(
+    rel: str,
+    tables,
+    br_scope: bool,
+    br_ids: dict[str, int],
+    errors: list[str],
+) -> None:
+    """Validate Basis/Grade cells (and Rule IDs in the BR table) of tables."""
+    for _header_lineno, headers, rows in tables:
+        for row_lineno, cells in rows:
+            if not any(cells):
+                continue
+            if br_scope:
+                rule_id = _cell(headers, cells, "Rule ID")
+                if rule_id:
+                    if not BR_ID_RE.fullmatch(rule_id):
+                        errors.append(
+                            _err(
+                                rel,
+                                row_lineno,
+                                "invalid-id",
+                                f"`{rule_id}`; expected BR-###",
+                            )
+                        )
+                    elif rule_id in br_ids:
+                        errors.append(
+                            _err(
+                                rel,
+                                row_lineno,
+                                "duplicate-id",
+                                f"duplicate Rule ID `{rule_id}` within this "
+                                f"behavior contract (first defined at line "
+                                f"{br_ids[rule_id]})",
+                            )
+                        )
+                    else:
+                        br_ids[rule_id] = row_lineno
+            basis = _cell(headers, cells, "Basis")
+            if basis and basis not in PROVENANCE_VALUES:
+                errors.append(
+                    _err(
+                        rel,
+                        row_lineno,
+                        "invalid-enum",
+                        f"Basis `{basis}`; expected observed|inferred",
+                    )
+                )
+            grade = _cell(headers, cells, "Grade")
+            if grade and grade not in GRADES:
+                errors.append(
+                    _err(
+                        rel,
+                        row_lineno,
+                        "invalid-enum",
+                        f"Grade `{grade}`; expected A|B|C|D|?",
+                    )
+                )
+
+
+def validate_behavior_contract(
+    path: Path, rel: str, errors: list[str]
+) -> dict[str, int]:
+    """A-2 checks for one behavior-contract.md; returns its BR-ID map."""
+    lines = list(_visible_lines(path.read_text(encoding="utf-8")))
+    br_ids: dict[str, int] = {}
+    _header, sections = _split_sections(lines)
+    for title, section_lines in sections:
+        tables = _parse_tables(section_lines)
+        _validate_grade_cells(
+            rel, tables, br_scope=(title == "business rules"), br_ids=br_ids,
+            errors=errors,
+        )
+    # Claim provenance markers: bullets that open with a bracketed marker
+    # (but not markdown links) must be exactly [observed] or [inferred].
+    for lineno, line in lines:
+        match = CLAIM_MARKER_RE.match(line)
+        if not match or MARKDOWN_LINK_RE.match(line):
+            continue
+        marker = match.group(1)
+        if TASK_LIST_MARKER_RE.fullmatch(marker):
+            continue
+        if marker not in PROVENANCE_VALUES:
+            errors.append(
+                _err(
+                    rel,
+                    lineno,
+                    "invalid-marker",
+                    f"claim marker `[{marker}]`; expected [observed] or [inferred]",
+                )
+            )
+    return br_ids
+
+
+def validate_feature_card_oq(
+    path: Path, rel: str, oq_ids: set[str], errors: list[str]
+) -> None:
+    """Structured OQ references in the feature-card `## Open questions`
+    section: a bullet whose leading token is OQ-shaped must be well-formed
+    and resolve in the global registry. Prose is ignored."""
+    lines = list(_visible_lines(path.read_text(encoding="utf-8")))
+    _header, sections = _split_sections(lines)
+    for title, section_lines in sections:
+        if title != "open questions":
+            continue
+        for lineno, line in section_lines:
+            match = re.match(r"^\s*[-*]\s+(\S+)", line)
+            if not match:
+                continue
+            token = match.group(1)
+            if not OQ_ID_PREFIX_RE.fullmatch(token):
+                continue
+            if not OQ_ID_RE.fullmatch(token):
+                errors.append(
+                    _err(rel, lineno, "invalid-id", f"`{token}`; expected OQ-###")
+                )
+            elif token not in oq_ids:
+                errors.append(
+                    _err(
+                        rel,
+                        lineno,
+                        "missing-ref",
+                        f"`{token}` is not defined in {OQ_REGISTRY_PATH}",
+                    )
+                )
+
+
+def validate_verification(path: Path, rel: str, errors: list[str]) -> None:
+    """A-2 checks for a canonical verification.md instance."""
+    lines = list(_visible_lines(path.read_text(encoding="utf-8")))
+    header, sections = _split_sections(lines)
+    seen, duplicates = _unique_fields(_parse_kv(header))
+    for lineno, key in duplicates:
+        errors.append(
+            _err(rel, lineno, "duplicate-key", f"duplicate field `{key}` in report header")
+        )
+    result = seen.get("Result")
+    if result and result[1] and result[1] not in VERIFICATION_RESULTS:
+        errors.append(
+            _err(
+                rel,
+                result[0],
+                "invalid-enum",
+                f"Result `{result[1]}`; expected PASS|FAIL|PARTIAL|BLOCKED",
+            )
+        )
+    all_lines = header + [line for _, section in sections for line in section]
+    for _header_lineno, headers, rows in _parse_tables(all_lines):
+        if "Grade" not in headers:
+            continue
+        for row_lineno, cells in rows:
+            grade = _cell(headers, cells, "Grade")
+            if grade and grade not in GRADES:
+                errors.append(
+                    _err(
+                        rel,
+                        row_lineno,
+                        "invalid-enum",
+                        f"Grade `{grade}`; expected A|B|C|D|?",
+                    )
+                )
+
+
+def validate_evidence_record(
+    path: Path, rel: str, record_id: str, id_lineno: int, br_ids: dict[str, int],
+    errors: list[str],
+) -> None:
+    """A-2 checks for one evidence-record instance (identified by its
+    `# Evidence: <ID>` H1)."""
+    if not record_id:
+        errors.append(
+            _err(
+                rel,
+                id_lineno,
+                "invalid-id",
+                "empty record ID; expected `# Evidence: <ID>`",
+            )
+        )
+    lines = list(_visible_lines(path.read_text(encoding="utf-8")))
+    header, _sections = _split_sections(lines)
+    seen, duplicates = _unique_fields(_parse_kv(header))
+    for lineno, key in duplicates:
+        errors.append(
+            _err(rel, lineno, "duplicate-key", f"duplicate field `{key}` in record header")
+        )
+    grade = seen.get("Grade")
+    if grade and grade[1] and grade[1] not in GRADES:
+        errors.append(
+            _err(rel, grade[0], "invalid-enum", f"Grade `{grade[1]}`; expected A|B|C|D|?")
+        )
+    source_type = seen.get("Source type")
+    if source_type and source_type[1] and source_type[1] not in SOURCE_TYPES:
+        errors.append(
+            _err(
+                rel,
+                source_type[0],
+                "invalid-enum",
+                f"Source type `{source_type[1]}`; expected "
+                + "|".join(SOURCE_TYPES),
+            )
+        )
+    for key in BR_REF_FIELD_KEYS:
+        ref = seen.get(key)
+        if ref and ref[1]:
+            _check_br_reference(rel, ref[0], ref[1], br_ids, errors)
+
+
+def validate_characterization_record(
+    path: Path, rel: str, record_id: str, id_lineno: int, br_ids: dict[str, int],
+    errors: list[str],
+) -> None:
+    """A-2 checks for one characterization-record instance (`- Key: value`
+    header fields plus fixed capture-item sections)."""
+    if not record_id:
+        errors.append(
+            _err(
+                rel,
+                id_lineno,
+                "invalid-id",
+                "empty record ID; expected `# Characterization: <ID>`",
+            )
+        )
+    lines = list(_visible_lines(path.read_text(encoding="utf-8")))
+    header, sections = _split_sections(lines)
+    seen, duplicates = _unique_fields(_parse_kv(header))
+    for lineno, key in duplicates:
+        errors.append(
+            _err(rel, lineno, "duplicate-key", f"duplicate field `{key}` in record header")
+        )
+    rollup = seen.get("Record grade rollup")
+    if rollup and rollup[1] and rollup[1] not in GRADES:
+        errors.append(
+            _err(
+                rel,
+                rollup[0],
+                "invalid-enum",
+                f"Record grade rollup `{rollup[1]}`; expected A|B|C|D|?",
+            )
+        )
+    behavior_ref = seen.get("Behavior contract ref")
+    if behavior_ref and behavior_ref[1]:
+        _check_br_reference(rel, behavior_ref[0], behavior_ref[1], br_ids, errors)
+    for title, section_lines in sections:
+        fields = _parse_kv(section_lines)
+        if not any(key in ITEM_FIELD_KEYS for _lineno, key, _value in fields):
+            continue
+        item_seen, item_duplicates = _unique_fields(fields)
+        for lineno, key in item_duplicates:
+            errors.append(
+                _err(
+                    rel,
+                    lineno,
+                    "duplicate-key",
+                    f"duplicate field `{key}` in capture item `{title}`",
+                )
+            )
+        grade = item_seen.get("Grade")
+        value = item_seen.get("Value")
+        if grade and grade[1] and grade[1] not in ITEM_GRADES:
+            errors.append(
+                _err(
+                    rel,
+                    grade[0],
+                    "invalid-enum",
+                    f"Grade `{grade[1]}`; expected A|B|C|D|?|N/A",
+                )
+            )
+        if grade and grade[1] == "N/A" and value:
+            if value[1] == "none observed":
+                errors.append(
+                    _err(
+                        rel,
+                        grade[0],
+                        "invalid-invariant",
+                        "`none observed` is an observation, not N/A; it "
+                        "requires a real evidence grade (A|B|C|D|?)",
+                    )
+                )
+            elif not (value[1] == "N/A" or value[1].startswith("N/A (")):
+                errors.append(
+                    _err(
+                        rel,
+                        grade[0],
+                        "invalid-invariant",
+                        f"Grade N/A is valid only when Value is N/A or "
+                        f"`N/A (...)`, got Value `{value[1]}`",
+                    )
+                )
+        ref = item_seen.get("Ref")
+        if ref and ref[1]:
+            _check_br_reference(rel, ref[0], ref[1], br_ids, errors)
+
+
+def _first_h1(lines: list[tuple[int, str]]) -> tuple[int, str] | None:
+    for lineno, line in lines:
+        if line.startswith("# "):
+            return lineno, line[2:].strip()
+    return None
+
+
+def validate_feature_schemas(root: Path, oq_ids: set[str]) -> list[str]:
+    """A-2 schema/reference validation across every feature directory."""
+    errors: list[str] = []
+    features_root = root / FEATURES_DIR
+    if not features_root.is_dir():
+        return errors
+    for entry in sorted(p for p in features_root.iterdir() if p.is_dir()):
+        rel = f"{FEATURES_DIR}/{entry.name}"
+
+        contract = entry / "behavior-contract.md"
+        br_ids: dict[str, int] = {}
+        if contract.is_file():
+            br_ids = validate_behavior_contract(
+                contract, f"{rel}/behavior-contract.md", errors
+            )
+
+        card = entry / FEATURE_CARD
+        if card.is_file():
+            validate_feature_card_oq(card, f"{rel}/{FEATURE_CARD}", oq_ids, errors)
+
+        verification = entry / "verification.md"
+        if verification.is_file():
+            validate_verification(verification, f"{rel}/verification.md", errors)
+
+        # Evidence/characterization instances are identified by first
+        # non-comment H1 anywhere inside the feature directory (including
+        # evidence/ subdirectories), never under docs/templates/.
+        for md_path in sorted(entry.rglob("*.md")):
+            md_rel = md_path.relative_to(root).as_posix()
+            visible = list(_visible_lines(md_path.read_text(encoding="utf-8")))
+            h1 = _first_h1(visible)
+            if h1 is None:
+                continue
+            id_lineno, title = h1
+            evidence_match = EVIDENCE_H1_RE.fullmatch(title)
+            if evidence_match:
+                validate_evidence_record(
+                    md_path, md_rel, evidence_match.group(1).strip(), id_lineno,
+                    br_ids, errors,
+                )
+                continue
+            characterization_match = CHARACTERIZATION_H1_RE.fullmatch(title)
+            if characterization_match:
+                validate_characterization_record(
+                    md_path, md_rel, characterization_match.group(1).strip(),
+                    id_lineno, br_ids, errors,
+                )
+    return errors
+
+
+def validate_oq_registry(root: Path) -> tuple[list[str], set[str]]:
+    """Validate the global OQ registry table and resolved-OQ headings.
+
+    Returns (errors, known_ids) so feature OQ references can resolve
+    against the same registry view."""
+    errors: list[str] = []
+    path = root / OQ_REGISTRY_PATH
+    if not path.is_file():
+        return [f"{OQ_REGISTRY_PATH}: registry file missing"], set()
+    lines = list(_visible_lines(path.read_text(encoding="utf-8")))
+    ids: dict[str, int] = {}
+    for _header_lineno, headers, rows in _parse_tables(lines):
+        if "ID" not in headers or "Status" not in headers:
+            continue
+        for row_lineno, cells in rows:
+            row_id = _cell(headers, cells, "ID") or ""
+            status = _cell(headers, cells, "Status") or ""
+            if not row_id and not status:
+                continue
+            if not OQ_ID_RE.fullmatch(row_id):
+                errors.append(
+                    _err(OQ_REGISTRY_PATH, row_lineno, "invalid-id",
+                         f"`{row_id}`; expected OQ-###")
+                )
+            elif row_id in ids:
+                errors.append(
+                    _err(OQ_REGISTRY_PATH, row_lineno, "duplicate-id",
+                         f"duplicate OQ ID `{row_id}` (first defined at line "
+                         f"{ids[row_id]})")
+                )
+            else:
+                ids[row_id] = row_lineno
+            if status and status not in OQ_STATUSES:
+                errors.append(
+                    _err(OQ_REGISTRY_PATH, row_lineno, "invalid-enum",
+                         f"Status `{status}`; expected "
+                         + "|".join(OQ_STATUSES))
+                )
+    for lineno, line in lines:
+        match = OQ_HEADING_RE.match(line)
+        if not match:
+            continue
+        token = f"OQ-{match.group(1)}"
+        if not OQ_ID_RE.fullmatch(token):
+            errors.append(
+                _err(OQ_REGISTRY_PATH, lineno, "invalid-id",
+                     f"`{token}`; expected OQ-###")
+            )
+        elif token not in ids:
+            errors.append(
+                _err(OQ_REGISTRY_PATH, lineno, "missing-ref",
+                     f"`{token}` heading has no row in the registry table")
+            )
+    return errors, set(ids)
+
+
+def collect_validation_errors(root: Path | None = None) -> list[str]:
+    """Run A-1 and A-2 together and return every violation (no fail-fast)."""
+    base = ROOT if root is None else root
+    oq_errors, oq_ids = validate_oq_registry(base)
+    return validate_features(base) + oq_errors + validate_feature_schemas(base, oq_ids)
+
+
 def main() -> None:
     validate_required()
     validate_json()
     validate_skills()
     validate_agents_and_commands()
-    feature_errors = validate_features()
-    if feature_errors:
+    errors = collect_validation_errors()
+    if errors:
         raise SystemExit(
-            "ERROR: feature artifact validation failed "
-            f"({len(feature_errors)} issue(s)):\n"
-            + "\n".join(f"- {error}" for error in feature_errors)
+            "ERROR: repository validation failed "
+            f"({len(errors)} issue(s)):\n"
+            + "\n".join(f"- {error}" for error in errors)
         )
     print("Scaffold validation passed.")
 

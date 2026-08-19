@@ -50,28 +50,28 @@ For every `Value:` field, use exactly one of: an actual captured value; `none ob
 
 - Format: N/A
 - Value: none observed
-- Grade: N/A
+- Grade: ?
 - Ref: BR-001
 
 ## logs/events
 
 - Format: N/A
 - Value: none observed
-- Grade: N/A
+- Grade: ?
 - Ref: BR-001
 
 ## callbacks to platform
 
 - Format: N/A
 - Value: none observed
-- Grade: N/A
+- Grade: ?
 - Ref: BR-001
 
 ## exception/error code
 
 - Format: N/A
 - Value: none observed
-- Grade: N/A
+- Grade: ?
 - Ref: BR-001
 
 ## timing/order only when business-significant

@@ -18,6 +18,99 @@ Coordinate from durable repository artifacts, not chat memory.
 - Coordinator-owned durable updates: specialist reports returned by read-only agents, feature lifecycle metadata, gate result/evidence records, `migration/QUEUE.md`, `migration/STATE.md`, and `docs/05-open-questions.md`.
 - A queue item is not complete until its stated completion artifact exists and the applicable gate is satisfied.
 
+## Durable state protocol
+
+`docs/11-durable-state-protocol.md` owns the exact schemas; this section is
+the coordinator's operating procedure for them.
+
+### State authority precedence
+
+Durable state has separate scopes; no artifact may silently absorb another
+scope. When artifacts disagree, repair from the more specific authority
+outward: feature/open-question/gate/STOP evidence -> queue row -> project
+summary (`migration/STATE.md`). `STATE.md` never overwrites a more specific
+fact merely because it is newer prose. Owners:
+
+1. feature `stage`/`blocked` — `migration/features/{feature-id}/feature-card.md`;
+2. work-item lifecycle — `migration/QUEUE.md` (one canonical live table);
+3. gate criteria/results — criteria defined only in `docs/02-migration-pipeline.md`; `STATE.md` stores only `current_gate`, `gate_result`, `failed_gate_criteria`;
+4. STOP classification/routing and OQ allocation — `docs/11-stop-condition-contract.md`;
+5. project operability `status` — `migration/STATE.md`, derived from queue actionability, never copied from `gate_result`;
+6. unresolved facts — `docs/05-open-questions.md`; queue/state reference `OQ-###` IDs but never duplicate the registry.
+
+### STOP-to-state persistence
+
+The STOP contract owns cause semantics; the coordinator performs these
+shared-state writes (never the specialist):
+
+| STOP outcome | Durable persistence |
+|---|---|
+| blocking unknown with OQ | reuse/allocate the OQ; affected row `BLOCKED` with `Blocker: OQ-###`; feature `blocked: true` only for the affected feature; derive STATE |
+| missing queue prerequisite/artifact | unfinished dependency in `Depends on` or gate criterion in `Blocker`; row `BLOCKED`; no OQ unless an unanswered fact exists |
+| approval gate | row `BLOCKED` with `HUMAN:<token>` or gate criterion; no OQ merely for missing approval |
+| external prerequisite | row `BLOCKED` with `EXT:<token>`; no OQ unless a separate unknown exists |
+| contradiction with unanswered fact | STOP contract decides OQ reuse/allocation; row `BLOCKED` via that OQ or dependency/criterion |
+| out-of-role return | no queue status change by itself; reroute unless the payload identifies a durable blocker |
+| non-blocking unknown | persist/reuse the OQ and future dependency reference; do not set feature/queue/project blocked solely because it exists |
+
+### Generation transaction (every queue/project-state mutation)
+
+docs/11 requires more than an equal-generation read: it requires retaining
+the *observed blob/revision identity*, or re-reading immediately before
+write, so a concurrent writer is never silently overwritten. The concrete,
+deterministic mechanism in this repository is the tracked Git blob hash of
+each file (`git hash-object migration/STATE.md migration/QUEUE.md`, or
+equivalently `git diff --quiet -- migration/STATE.md migration/QUEUE.md`
+against the hash captured at step 1) — not merely re-reading `generation`,
+which cannot distinguish "unchanged" from "another writer produced the same
+value coincidentally" and cannot detect a same-generation edit at all.
+
+1. Read `migration/STATE.md` and `migration/QUEUE.md` together, require
+   equal starting generation `N` (a mismatch is a partial write — see
+   recovery below; do not build on it), and record the current Git blob
+   hash of both files as the observed revision.
+2. Persist feature/evidence/open-question/gate/STOP artifacts first.
+3. Immediately before writing `QUEUE.md`, re-hash both files and compare
+   against the step-1 observed revision. If either hash changed, a
+   concurrent writer landed — abort the transaction without writing
+   `QUEUE.md`/`STATE.md`, discard nothing already persisted in step 2, and
+   restart the transaction from step 1 against the new state.
+4. Write `QUEUE.md` with generation `N+1` (mutated rows, normalized
+   `Depends on`/`Blocker` fields), then re-record its new blob hash as part
+   of the observed revision for step 5's check.
+5. Derive the project summary from the newly written specific facts
+   (`status` from current-gate queue actionability; never copy the selected
+   row's status or `gate_result` into `status`).
+6. Immediately before writing `STATE.md`, re-hash `QUEUE.md` and confirm it
+   still matches the hash recorded in step 4 (nothing may write `QUEUE.md`
+   between steps 4 and 6 in this protocol). If it changed, abort without
+   writing `STATE.md` and restart from step 1.
+7. Write `migration/STATE.md` last with the same generation `N+1`
+   (`gate_result`/`failed_gate_criteria` kept separate from `status`;
+   refresh `active_queue_items`/`next_queue_items`/`blocked_queue_items`
+   from current-gate rows).
+8. Prefer one Git commit for the complete transaction.
+
+### Stale/partial-write detection and recovery
+
+Before starting new work, compare generations:
+
+- `STATE.generation == QUEUE.generation`: normal read.
+- `QUEUE.generation > STATE.generation`: interrupted ordered write. Treat
+  `STATE.md` as stale, recompute it from the queue/feature/open-question/gate
+  authorities, finish the transaction (STATE at the queue's generation), then
+  continue.
+- `STATE.generation > QUEUE.generation`: protocol violation (STATE must be
+  written last from an already-updated queue). Stop and reconcile from Git
+  history plus specific durable artifacts; never guess the intended queue
+  mutation.
+
+Also stop on malformed schema, unsupported `schema_version`, or a Git blob
+hash change detected by the re-hash checks in the "Generation transaction"
+steps above (abort/restart, per those steps, rather than writing over a
+concurrent update). `python3 scripts/validate_scaffold.py` statically
+enforces the same schema/invariant/generation checks.
+
 ## Procedure
 
 1. **[Input]** Read all required global inputs and resolve the smallest valid queue item plus `{feature-id}` where applicable; if prerequisites are missing or the item is blocked, retain the current feature stage, set/retain `blocked: true` when feature-local, record the blocker, and do not advance the phase.
@@ -27,7 +120,7 @@ Coordinate from durable repository artifacts, not chat memory.
 5. **[Input/Output]** For implementation, persist any newly received explicit user authorization in `target-feature-design.md`, re-evaluate all of G3, and delegate only the approved slice to `implementer` when the complete gate is `PASS`; otherwise stop without code changes.
 6. **[Input/Output]** After implementation, delegate `adversarial-reviewer` and persist `migration/features/{feature-id}/review.md`; if review fails, return the item to design/implementation correction instead of dispatching verification as if approved.
 7. **[Input/Output]** When review permits verification, delegate `verifier` and persist canonical `migration/features/{feature-id}/verification.md`; if the verdict is `FAIL`, `PARTIAL`, or `BLOCKED`, keep the item incomplete and route the cause through the documented failure loop.
-8. **[Output]** After every meaningful result, update the feature card `stage`/`blocked` metadata when feature-local, plus `migration/QUEUE.md`, `migration/STATE.md`, affected gate records, and `docs/05-open-questions.md` entries so another session can resume without chat history.
+8. **[Output]** After every meaningful result, update the feature card `stage`/`blocked` metadata when feature-local, plus `migration/QUEUE.md`, `migration/STATE.md`, affected gate records, and `docs/05-open-questions.md` entries so another session can resume without chat history — always as one generation transaction per "Durable state protocol" above.
 9. **[Output]** Mark a queue item complete only when its completion artifact exists, material unknowns are explicitly recorded, independent-role requirements are met, and all applicable gates have passed.
 
 ## Gate rules

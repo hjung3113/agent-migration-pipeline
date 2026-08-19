@@ -5,7 +5,122 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-20
 
-## Next session: Issue #2 done, continue Track P at Issue #14
+## Next session: Issue #14 implemented, continue Track P at (#7, #8)
+
+Issue #14 (durable-state protocol) is implemented in worktree
+`wt-issue14-durable-state` (this branch) against the merged canonical design
+`docs/11-durable-state-protocol.md`, per the owner's explicit rule-13
+authorization for #14 only. All 8 implementation requirements done as one
+pass:
+
+- `migration/STATE.md` migrated to the frontmatter schema. Honest
+  normalization: `gate_result: BLOCKED` with `failed_gate_criteria:
+  [G0.1, G0.2, G0.3]` (no `migration/evidence/*` artifacts exist, OQ-001/
+  OQ-010 still OPEN); project `status: BLOCKED` **derived** per docs/11
+  (every current-gate Phase 0 row is BLOCKED, none actionable — not a copy
+  of the gate result; `ACTIVE` + `gate_result: BLOCKED` remains valid when
+  gate-enabling work is actionable).
+- `migration/QUEUE.md` migrated to frontmatter + exactly one canonical
+  7-column live table (both old tables merged, no rows dropped;
+  difficulty/lock-in/review detail preserved in notes below the table).
+  Honest normalization per docs/11 migration item 6: Q-001..Q-003
+  `TODO -> BLOCKED` with `EXT:legacy-source-access`; Q-004..Q-006
+  `TODO -> BLOCKED` with `G0.1; G0.2; G0.3` (docs/02 forbids broad
+  discovery before G0 passes — this fixes finding #4's "TODO means two
+  things" defect; blockers clear when G0 is re-evaluated PASS); Q-007..Q-010
+  keep BLOCKED with prose deps moved into `Depends on`.
+- `migration-coordinator.md`: authority precedence, STOP-to-state
+  persistence table, generation transaction (equal-generation read,
+  artifacts -> QUEUE N+1 -> STATE last N+1), stale/partial-write recovery.
+- All six mutating command files got exact `## State updates` sections
+  (docs/11's six common rules + per-command row). Note: the task text said
+  "5 common rules" but docs/11 lists 6; all 6 were included per doc
+  precedence. `migration-status.md` states its read-only schema +
+  equal-generation consistency duty explicitly.
+- `scripts/validate_scaffold.py` extended (new section only; A-1/A-2
+  untouched) with `validate_durable_state()` wired into
+  `collect_validation_errors()`: frontmatter/enums/schema-version/
+  generation, gate/result/criterion relationships (embedded G0/G2/G3
+  criterion registry from docs/02), single canonical live table,
+  `Q-###`/`S-###` IDs, dependency resolution + cycles, blocker grammar
+  (`OQ-###` / gate criterion / `EXT:` / `HUMAN:` kebab), status invariants,
+  STATE list consistency vs current-phase rows, project status vs
+  actionability (PAUSED/COMPLETE exempt), DONE artifact existence
+  (best-effort, single-path cells only). Issue #13 note left in the section
+  comment: its coordinator persistence must reuse this logic, not add a
+  second free-form path.
+- New `scripts/tests/test_durable_state.py` (74 tests, positive +
+  negative for every check above).
+
+Owner adversarial review (before merge, matching #1/#2's diligence), two
+rounds, both pushed to PR #57 before any merge:
+
+Round 1 found and fixed one real bug: the project-`status` actionability
+invariant only fired when current-phase rows made ACTIVE or BLOCKED the
+required value, so a queue with no actionable/blocked current-phase row
+(e.g. all DONE) left `status` completely unconstrained — a stale
+`ACTIVE`/`BLOCKED` would validate clean. Fixed with the missing branch
+(neither is justified; expected `PAUSED`/`COMPLETE`), plus a regression
+test. Also deduplicated `_visible_numbered`/`_visible_lines` (two
+near-identical fence/HTML-comment skippers); `_visible_lines` now delegates
+to `_visible_numbered`.
+
+Round 2 was a formal PR review (5 findings) judged individually against
+docs/11 rather than applied wholesale; 4 were real, 1 was already handled:
+
+- **[Fixed]** `Blocker: OQ-###` syntax was checked but never resolved
+  against `docs/05-open-questions.md`, so `OQ-999` validated the same as a
+  real OQ. `validate_durable_state()` now takes an `oq_ids` param (the same
+  set `validate_oq_registry()`/`collect_validation_errors()` already
+  compute) and flags unresolved OQ blockers as `missing-ref`; skipped (not
+  auto-failed) when the caller doesn't supply a registry.
+- **[Fixed]** `DONE` rows weren't checked against the dependency/blocker
+  invariants that already applied to `TODO`/`IN_PROGRESS`/`BLOCKED`, so a
+  `DONE` row could still declare an unmet dependency or an active blocker.
+  Added the same `invalid-invariant` check DONE was missing.
+- **[Fixed]** `status: COMPLETE` was fully exempt from the actionability
+  check with no invariant of its own, so it could coexist with an open gate
+  or unfinished queue rows. Added: COMPLETE requires `current_gate: NONE`,
+  `gate_result: NONE`, empty `failed_gate_criteria`, and every queue row
+  (not just current-phase) `DONE`.
+- **[Fixed]** The `relevant` current-phase row computation used exact
+  string match on `Phase`, so a combined-phase row like Q-010's `5-6` would
+  silently drop out of `active_queue_items`/`next_queue_items`/
+  `blocked_queue_items`/actionability once `STATE.phase` became `5` or `6`
+  (this is inert today — current phase is `0` — but was a real latent bug).
+  Added `_phase_matches()`: exact match, or state phase inside a
+  `low-high` numeric range.
+- **[Already covered, not reopened]** The reviewer's concurrent
+  stale-write finding (revision identity beyond generation-equality) named
+  a real docs/11 requirement, but the coordinator's "Generation transaction"
+  section already had a "stop on... revision change detected after initial
+  read" line; that line was vague prose with no deterministic mechanism.
+  Made it concrete instead of writing new logic: `git hash-object` of
+  `STATE.md`/`QUEUE.md` captured at transaction start, re-checked
+  immediately before each write (before `QUEUE.md` at old step 3, before
+  `STATE.md` at old step 5), abort+restart the transaction on mismatch.
+
+quiet_state()'s default status moved from `COMPLETE` (chosen in round 1,
+now itself invariant-bearing) to `PAUSED` (the only status with zero
+invariants beyond list-consistency) to keep unrelated fixtures quiet; round
+1's `COMPLETE`-specific regression test was updated accordingly, and
+dedicated COMPLETE/DONE/OQ/phase-range tests were added instead of
+overloading the shared fixture.
+
+Final state: `python3 scripts/validate_scaffold.py` exits 0;
+`python3 -m pytest scripts/tests/ -q` — 262 passed (188 pre-existing green);
+`check_doc_links.py` / `check_oq_updates.py` pass. No design gap found that
+required stopping; the Q-004..Q-006 blocker choice (failed G0 criteria per
+the STOP contract's "applicable gate criterion in Blocker" rule) was the
+one judgment call, made within docs/11's already-decided blocker grammar.
+
+Next Track P order per plan: `(#7, #8) -> #5 -> #13 -> #6 -> #9 -> #11`.
+Before starting each, redo the "구현 시작 전 체크" 7-item gate in
+`ISSUES-PLAN-DRAFT.md` against current `main`. #13 implementation must
+reuse this validator/transaction logic. Rule-13 Track P/D authorization
+remains in effect and has not been revoked.
+
+## Next session (superseded): Issue #2 done, continue Track P at Issue #14
 
 Issue #2 (A-2 artifact schema/reference validation) is implemented,
 reviewed, and merged to `main` (PR #56, squash-merged as `6d60cce`).

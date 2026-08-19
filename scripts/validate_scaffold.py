@@ -317,11 +317,13 @@ ITEM_FIELD_KEYS = frozenset({"Format", "Value", "Grade", "Ref"})
 BR_REF_FIELD_KEYS = ("Behavior contract ref", "BR ref")
 
 
-def _visible_lines(text: str):
-    """Yield (lineno, line) skipping fenced code blocks and HTML comments."""
+def _visible_numbered(lines):
+    """Yield (lineno, line) skipping fenced code blocks and HTML comments,
+    preserving the caller's line numbers. Shared by `_visible_lines` (whole
+    file text) and durable-state checks (a pre-sliced body line range)."""
     in_fence = False
     in_comment = False
-    for lineno, line in enumerate(text.splitlines(), start=1):
+    for lineno, line in lines:
         stripped = line.lstrip()
         if stripped.startswith("```"):
             in_fence = not in_fence
@@ -337,6 +339,11 @@ def _visible_lines(text: str):
                 in_comment = True
             continue
         yield lineno, line
+
+
+def _visible_lines(text: str):
+    """Yield (lineno, line) skipping fenced code blocks and HTML comments."""
+    yield from _visible_numbered(enumerate(text.splitlines(), start=1))
 
 
 def _split_row(line: str) -> list[str]:
@@ -866,11 +873,731 @@ def validate_oq_registry(root: Path) -> tuple[list[str], set[str]]:
     return errors, set(ids)
 
 
+# Durable-state validation (Issue #14): docs/11-durable-state-protocol.md.
+# Validates the migration/STATE.md frontmatter, the migration/QUEUE.md
+# frontmatter plus its single canonical live table, and the cross-file
+# generation / dependency / blocker / derived-summary invariants that
+# docs/issue-2-artifact-schema-validation.md explicitly deferred until a
+# machine-readable queue contract existed.
+#
+# NOTE (Issue #13, not yet implemented): when STOP handling is implemented,
+# its coordinator persistence must reuse this same schema/generation/
+# invariant logic (or call this validator) instead of adding a second
+# free-form STATE/QUEUE write path.
+#
+# GATE_CRITERIA below is a static registry of the canonical gate criteria
+# owned by docs/02-migration-pipeline.md; a docs/02 gate change must update
+# it in the same commit.
+
+STATE_PATH = "migration/STATE.md"
+QUEUE_PATH = "migration/QUEUE.md"
+DURABLE_SCHEMA_VERSION = 1
+PROJECT_STATUSES = ("ACTIVE", "BLOCKED", "PAUSED", "COMPLETE")
+GATE_RESULTS = ("PENDING", "PASS", "BLOCKED", "NONE")
+QUEUE_STATUSES = ("TODO", "IN_PROGRESS", "BLOCKED", "DONE")
+QUEUE_COLUMNS = (
+    "ID",
+    "Status",
+    "Phase",
+    "Depends on",
+    "Blocker",
+    "Work item",
+    "Completion artifact",
+)
+QUEUE_ID_RE = re.compile(r"^[QS]-\d{3}$")
+RFC3339_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+GATE_CRITERION_RE = re.compile(r"^G\d+\.\d+$")
+EXT_BLOCKER_RE = re.compile(r"^EXT:[a-z0-9]+(?:-[a-z0-9]+)*$")
+HUMAN_BLOCKER_RE = re.compile(r"^HUMAN:[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+# Canonical gate -> criterion IDs (docs/02-migration-pipeline.md G0/G2/G3).
+GATE_CRITERIA = {
+    "G0": ("G0.1", "G0.2", "G0.3"),
+    "G2": ("G2.1", "G2.2", "G2.3"),
+    "G3": ("G3.1", "G3.2", "G3.3", "G3.4", "G3.5"),
+}
+KNOWN_CURRENT_GATES = tuple(GATE_CRITERIA) + ("NONE",)
+ALL_CRITERIA = frozenset(
+    criterion for criteria in GATE_CRITERIA.values() for criterion in criteria
+)
+
+STATE_REQUIRED_KEYS = (
+    "schema_version",
+    "generation",
+    "phase",
+    "phase_name",
+    "status",
+    "current_gate",
+    "gate_result",
+    "failed_gate_criteria",
+    "active_queue_items",
+    "next_queue_items",
+    "blocked_queue_items",
+    "last_updated",
+)
+QUEUE_REQUIRED_KEYS = ("schema_version", "generation", "status_values")
+
+
+def _parse_durable_frontmatter(
+    text: str, rel: str, errors: list[str]
+) -> tuple[dict[str, tuple[int, str]], list[tuple[int, str]]]:
+    """Parse the constrained flat frontmatter of STATE/QUEUE files.
+
+    Values are scalars (optionally quoted) or one bracket list
+    ``[A, B]``/``[]`` per docs/11's canonical examples; nested/indented YAML
+    is rejected. Returns (fields mapping key -> (lineno, raw value), body
+    lines); duplicates are reported, never merged.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        errors.append(
+            _err(rel, 1, "missing-frontmatter",
+                 "file must start with YAML frontmatter delimited by ---")
+        )
+        return {}, []
+    closing = None
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            closing = index
+            break
+    if closing is None:
+        errors.append(
+            _err(rel, max(1, len(lines)), "missing-frontmatter",
+                 "unterminated YAML frontmatter (missing closing ---)")
+        )
+        return {}, []
+    fields: dict[str, tuple[int, str]] = {}
+    for lineno, line in enumerate(lines[1:closing], start=2):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if line.startswith((" ", "\t")):
+            errors.append(
+                _err(rel, lineno, "invalid-frontmatter",
+                     f"indented line is not part of the flat frontmatter "
+                     f"contract: {stripped!r}")
+            )
+            continue
+        if ":" not in line:
+            errors.append(
+                _err(rel, lineno, "invalid-frontmatter",
+                     f"unparseable frontmatter line: {stripped!r}")
+            )
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        if not key:
+            errors.append(
+                _err(rel, lineno, "invalid-frontmatter",
+                     f"empty frontmatter key: {stripped!r}")
+            )
+            continue
+        if key in fields:
+            errors.append(
+                _err(rel, lineno, "duplicate-key",
+                     f"duplicate frontmatter key: {key}")
+            )
+            continue
+        fields[key] = (lineno, value.strip())
+    body = list(enumerate(lines[closing + 1:], start=closing + 2))
+    return fields, body
+
+
+def _fm_unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        return value[1:-1]
+    return value
+
+
+def _fm_str(fields: dict[str, tuple[int, str]], key: str) -> str | None:
+    entry = fields.get(key)
+    if entry is None:
+        return None
+    return _fm_unquote(entry[1])
+
+
+def _fm_int(fields: dict[str, tuple[int, str]], key: str) -> int | None:
+    entry = fields.get(key)
+    if entry is None:
+        return None
+    try:
+        return int(_fm_unquote(entry[1]), 10)
+    except ValueError:
+        return None
+
+
+def _fm_list(
+    fields: dict[str, tuple[int, str]], key: str, rel: str, errors: list[str]
+) -> list[str] | None:
+    entry = fields.get(key)
+    if entry is None:
+        return None
+    raw = entry[1]
+    if not (raw.startswith("[") and raw.endswith("]")):
+        errors.append(
+            _err(rel, entry[0], "invalid-type",
+                 f"{key} must be a bracket list like [A, B] or [], got {raw!r}")
+        )
+        return None
+    inner = raw[1:-1].strip()
+    if not inner:
+        return []
+    return [item.strip() for item in inner.split(",")]
+
+
+def _validate_durable_common(
+    fields: dict[str, tuple[int, str]], required: tuple[str, ...],
+    rel: str, errors: list[str],
+) -> dict[str, int]:
+    """schema_version/generation/required-key checks shared by both files.
+
+    Returns the successfully parsed positive-integer fields."""
+    parsed: dict[str, int] = {}
+    for key in required:
+        if key not in fields:
+            errors.append(
+                _err(rel, 1, "missing-key",
+                     f"missing required frontmatter key: {key}")
+            )
+    for key in ("schema_version", "generation"):
+        if key not in fields:
+            continue
+        value = _fm_int(fields, key)
+        if value is None:
+            errors.append(
+                _err(rel, fields[key][0], "invalid-type",
+                     f"{key} must be a positive integer, got "
+                     f"{fields[key][1]!r}")
+            )
+        elif value < 1:
+            category = "invalid-generation" if key == "generation" else "invalid-type"
+            errors.append(
+                _err(rel, fields[key][0], category,
+                     f"{key} must be a positive integer, got {value}")
+            )
+        else:
+            parsed[key] = value
+    if parsed.get("schema_version") is not None and (
+        parsed["schema_version"] != DURABLE_SCHEMA_VERSION
+    ):
+        errors.append(
+            _err(rel, fields["schema_version"][0], "unsupported-schema-version",
+                 f"schema_version {parsed['schema_version']} is not supported "
+                 f"(expected {DURABLE_SCHEMA_VERSION})")
+        )
+    return parsed
+
+
+def _validate_state_file(root: Path) -> tuple[list[str], dict | None]:
+    errors: list[str] = []
+    path = root / STATE_PATH
+    if not path.is_file():
+        return [f"{STATE_PATH}: durable-state file missing"], None
+    fields, _body = _parse_durable_frontmatter(
+        path.read_text(encoding="utf-8"), STATE_PATH, errors
+    )
+    if not fields:
+        return errors, None
+    parsed = _validate_durable_common(fields, STATE_REQUIRED_KEYS, STATE_PATH, errors)
+
+    state: dict = {"_fields": fields}
+    state.update(parsed)
+    state["phase"] = _fm_str(fields, "phase")
+
+    status = _fm_str(fields, "status")
+    state["status"] = status
+    if status is not None and status not in PROJECT_STATUSES:
+        errors.append(
+            _err(STATE_PATH, fields["status"][0], "invalid-enum",
+                 f"status `{status}`; expected " + "|".join(PROJECT_STATUSES))
+        )
+
+    gate = _fm_str(fields, "current_gate")
+    state["current_gate"] = gate
+    if gate is not None and gate not in KNOWN_CURRENT_GATES:
+        errors.append(
+            _err(STATE_PATH, fields["current_gate"][0], "invalid-enum",
+                 f"current_gate `{gate}`; expected " + "|".join(KNOWN_CURRENT_GATES)
+                 + " (canonical gates from docs/02-migration-pipeline.md)")
+        )
+
+    result = _fm_str(fields, "gate_result")
+    state["gate_result"] = result
+    if result is not None and result not in GATE_RESULTS:
+        errors.append(
+            _err(STATE_PATH, fields["gate_result"][0], "invalid-enum",
+                 f"gate_result `{result}`; expected " + "|".join(GATE_RESULTS))
+        )
+
+    if gate is not None and result is not None and (gate == "NONE") != (
+        result == "NONE"
+    ):
+        errors.append(
+            _err(STATE_PATH, fields["current_gate"][0], "invalid-relationship",
+                 "current_gate: NONE exactly when gate_result: NONE (no gate "
+                 "applies)")
+        )
+
+    criteria = _fm_list(fields, "failed_gate_criteria", STATE_PATH, errors)
+    if criteria is not None:
+        state["failed_gate_criteria"] = criteria
+        if result == "BLOCKED" and not criteria:
+            errors.append(
+                _err(STATE_PATH, fields["gate_result"][0],
+                     "invalid-relationship",
+                     "gate_result BLOCKED requires a non-empty "
+                     "failed_gate_criteria list")
+            )
+        elif result in ("PENDING", "PASS", "NONE") and criteria:
+            errors.append(
+                _err(STATE_PATH, fields["failed_gate_criteria"][0],
+                     "invalid-relationship",
+                     f"gate_result {result} requires failed_gate_criteria to "
+                     f"be empty, got {criteria}")
+            )
+        if gate in GATE_CRITERIA:
+            for item in criteria:
+                if item not in GATE_CRITERIA[gate]:
+                    errors.append(
+                        _err(STATE_PATH, fields["failed_gate_criteria"][0],
+                             "invalid-ref",
+                             f"criterion `{item}` does not belong to gate "
+                             f"{gate} (criteria: "
+                             + ", ".join(GATE_CRITERIA[gate]) + ")")
+                    )
+
+    last_updated = _fm_str(fields, "last_updated")
+    if last_updated is not None and not RFC3339_UTC_RE.fullmatch(last_updated):
+        errors.append(
+            _err(STATE_PATH, fields["last_updated"][0], "invalid-timestamp",
+                 f"last_updated `{last_updated}`; expected UTC RFC 3339 like "
+                 "2026-08-19T15:20:46Z")
+        )
+
+    for key in ("active_queue_items", "next_queue_items", "blocked_queue_items"):
+        items = _fm_list(fields, key, STATE_PATH, errors)
+        if items is None:
+            continue
+        state[key] = items
+        seen: set[str] = set()
+        for item in items:
+            if not QUEUE_ID_RE.fullmatch(item):
+                errors.append(
+                    _err(STATE_PATH, fields[key][0], "invalid-id",
+                         f"`{item}` in {key}; expected Q-### or S-###")
+                )
+            elif item in seen:
+                errors.append(
+                    _err(STATE_PATH, fields[key][0], "duplicate-id",
+                         f"duplicate `{item}` in {key}")
+                )
+            else:
+                seen.add(item)
+    return errors, state
+
+
+def _parse_queue_deps(raw: str) -> tuple[list[str] | None, str | None]:
+    """Returns (tokens, bad_token); tokens is None when raw is malformed."""
+    if raw == "-":
+        return [], None
+    tokens = [token.strip() for token in raw.split(",")]
+    for token in tokens:
+        if not QUEUE_ID_RE.fullmatch(token):
+            return None, token
+    return tokens, None
+
+
+def _parse_queue_blockers(raw: str) -> tuple[list[str] | None, str | None]:
+    """Returns (tokens, bad_token); OQ-### syntax, canonical gate criterion,
+    EXT:<kebab-token>, or HUMAN:<kebab-token> per docs/11's Blocker grammar."""
+    if raw == "-":
+        return [], None
+    tokens = [token.strip() for token in raw.split(";")]
+    for token in tokens:
+        if OQ_ID_RE.fullmatch(token):
+            continue
+        if GATE_CRITERION_RE.fullmatch(token):
+            if token not in ALL_CRITERIA:
+                return None, token
+            continue
+        if EXT_BLOCKER_RE.fullmatch(token) or HUMAN_BLOCKER_RE.fullmatch(token):
+            continue
+        return None, token
+    return tokens, None
+
+
+def _validate_queue_file(root: Path) -> tuple[list[str], dict | None]:
+    errors: list[str] = []
+    path = root / QUEUE_PATH
+    if not path.is_file():
+        return [f"{QUEUE_PATH}: durable-state file missing"], None
+    fields, body = _parse_durable_frontmatter(
+        path.read_text(encoding="utf-8"), QUEUE_PATH, errors
+    )
+    if not fields:
+        return errors, None
+    parsed = _validate_durable_common(fields, QUEUE_REQUIRED_KEYS, QUEUE_PATH, errors)
+
+    status_values = _fm_list(fields, "status_values", QUEUE_PATH, errors)
+    if status_values is not None and tuple(status_values) != QUEUE_STATUSES:
+        errors.append(
+            _err(QUEUE_PATH, fields["status_values"][0], "invalid-enum",
+                 "status_values must be exactly ["
+                 + ", ".join(QUEUE_STATUSES) + "], got [" + ", ".join(status_values) + "]")
+        )
+
+    visible = list(_visible_numbered(body))
+    tables = list(_parse_tables(visible))
+    live = [
+        (header_lineno, headers, rows)
+        for header_lineno, headers, rows in tables
+        if headers[:2] == ["ID", "Status"]
+    ]
+    if not live:
+        errors.append(
+            _err(QUEUE_PATH, visible[0][0] if visible else 1, "missing-table",
+                 "no canonical live queue table (header must start with "
+                 "ID | Status)")
+        )
+    for header_lineno, headers, _rows in live:
+        if tuple(headers) != QUEUE_COLUMNS:
+            errors.append(
+                _err(QUEUE_PATH, header_lineno, "invalid-header",
+                     "live queue table columns must be exactly "
+                     + " | ".join(QUEUE_COLUMNS) + ", got " + " | ".join(headers))
+            )
+    for header_lineno, _headers, _rows in live[1:]:
+        errors.append(
+            _err(QUEUE_PATH, header_lineno, "duplicate-table",
+                 "more than one live queue table; QUEUE.md must contain "
+                 "exactly one")
+        )
+
+    queue: dict = {"_fields": fields}
+    queue.update(parsed)
+    rows: dict[str, dict] = {}
+    queue["rows"] = rows
+    if live and tuple(live[0][1]) == QUEUE_COLUMNS:
+        for row_lineno, cells in live[0][2]:
+            if not any(cells):
+                continue
+            if len(cells) != len(QUEUE_COLUMNS):
+                errors.append(
+                    _err(QUEUE_PATH, row_lineno, "invalid-row",
+                         f"expected {len(QUEUE_COLUMNS)} columns, got "
+                         f"{len(cells)}")
+                )
+                continue
+            row_id, status, phase, deps_raw, blocker_raw, _work, artifact = cells
+            if not QUEUE_ID_RE.fullmatch(row_id):
+                errors.append(
+                    _err(QUEUE_PATH, row_lineno, "invalid-id",
+                         f"`{row_id}`; expected Q-### or S-###")
+                )
+            elif row_id in rows:
+                errors.append(
+                    _err(QUEUE_PATH, row_lineno, "duplicate-id",
+                         f"duplicate queue ID `{row_id}` (first defined at "
+                         f"line {rows[row_id]['lineno']})")
+                )
+            if status not in QUEUE_STATUSES:
+                errors.append(
+                    _err(QUEUE_PATH, row_lineno, "invalid-enum",
+                         f"Status `{status}`; expected " + "|".join(QUEUE_STATUSES))
+                )
+            deps, bad_dep = _parse_queue_deps(deps_raw)
+            if bad_dep is not None:
+                errors.append(
+                    _err(QUEUE_PATH, row_lineno, "invalid-id",
+                         f"Depends on token `{bad_dep}`; expected Q-### or S-###")
+                )
+            blockers, bad_blocker = _parse_queue_blockers(blocker_raw)
+            if bad_blocker is not None:
+                errors.append(
+                    _err(QUEUE_PATH, row_lineno, "invalid-ref",
+                         f"Blocker `{bad_blocker}`; expected OQ-###, canonical "
+                         "gate criterion (e.g. G0.1), EXT:<kebab-token>, or "
+                         "HUMAN:<kebab-token>")
+                )
+            if QUEUE_ID_RE.fullmatch(row_id) and row_id not in rows:
+                rows[row_id] = {
+                    "lineno": row_lineno,
+                    "status": status,
+                    "phase": phase,
+                    "deps": deps if deps is not None else [],
+                    "blockers": blockers if blockers is not None else [],
+                    "artifact": artifact,
+                }
+    return errors, queue
+
+
+PHASE_RANGE_RE = re.compile(r"^(\d+)-(\d+)$")
+
+
+def _phase_matches(row_phase: str, current_phase: str) -> bool:
+    """A queue row's `Phase` may be a single stable phase identifier (exact
+    match) or a hyphenated numeric range for a row spanning multiple phases
+    (e.g. `5-6` for a combined review+verification row); it is
+    current-phase-relevant when `current_phase` falls inside that range."""
+    if row_phase == current_phase:
+        return True
+    match = PHASE_RANGE_RE.fullmatch(row_phase)
+    if not match or not current_phase.isdigit():
+        return False
+    low, high = int(match.group(1)), int(match.group(2))
+    return low <= int(current_phase) <= high
+
+
+def _depends_on_cycle(start: str, rows: dict[str, dict]) -> bool:
+    stack = list(rows[start]["deps"])
+    seen: set[str] = set()
+    while stack:
+        node = stack.pop()
+        if node == start:
+            return True
+        if node in seen or node not in rows:
+            continue
+        seen.add(node)
+        stack.extend(rows[node]["deps"])
+    return False
+
+
+def validate_durable_state(
+    root: Path | None = None, oq_ids: set[str] | None = None
+) -> list[str]:
+    """Issue #14 durable-state validation for STATE.md + QUEUE.md.
+
+    Covers frontmatter schema, enums, gate/result/criterion relationships,
+    the single canonical live queue table, dependency/blocker reference
+    grammar and invariants, STATE/QUEUE generation equality, STATE summary
+    lists versus current-phase queue rows, project status versus queue
+    actionability, and DONE completion-artifact existence (best effort, only
+    for cells that are unambiguously a single repo path).
+
+    `oq_ids` is the known-good OQ registry (from `validate_oq_registry`); a
+    `Blocker: OQ-###` reference that isn't a real registry entry is a
+    dangling reference, same as an unresolved `Depends on` queue ID. When
+    the caller can't supply it (e.g. isolated tests), OQ blocker resolution
+    is skipped rather than treated as an automatic failure.
+    """
+    base = ROOT if root is None else root
+    state_errors, state = _validate_state_file(base)
+    queue_errors, queue = _validate_queue_file(base)
+    errors = state_errors + queue_errors
+    if state is None or queue is None:
+        return errors
+
+    state_fields = state["_fields"]
+    queue_fields = queue["_fields"]
+    state_generation = state.get("generation")
+    queue_generation = queue.get("generation")
+    if state_generation is not None and queue_generation is not None and (
+        state_generation != queue_generation
+    ):
+        errors.append(
+            _err(QUEUE_PATH, queue_fields["generation"][0], "invalid-generation",
+                 f"QUEUE generation {queue_generation} != STATE generation "
+                 f"{state_generation}; every durable transaction must update "
+                 "both files to the same new generation")
+        )
+
+    rows = queue["rows"]
+    for row_id, row in rows.items():
+        for dep in row["deps"]:
+            if dep not in rows:
+                errors.append(
+                    _err(QUEUE_PATH, row["lineno"], "missing-ref",
+                         f"`{row_id}` depends on `{dep}` which is not a live "
+                         "queue row")
+                )
+        if oq_ids is not None:
+            for blocker in row["blockers"]:
+                if OQ_ID_RE.fullmatch(blocker) and blocker not in oq_ids:
+                    errors.append(
+                        _err(QUEUE_PATH, row["lineno"], "missing-ref",
+                             f"`{row_id}` Blocker `{blocker}` does not "
+                             f"resolve in {OQ_REGISTRY_PATH}")
+                    )
+    for row_id in rows:
+        if _depends_on_cycle(row_id, rows):
+            errors.append(
+                _err(QUEUE_PATH, rows[row_id]["lineno"], "cyclic-dependency",
+                     f"`{row_id}` depends (transitively) on itself")
+            )
+
+    for row_id, row in rows.items():
+        status = row["status"]
+        if status not in QUEUE_STATUSES:
+            continue
+        deps_done = all(
+            dep in rows and rows[dep]["status"] == "DONE" for dep in row["deps"]
+        )
+        unmet_dep = any(
+            dep not in rows or rows[dep]["status"] != "DONE" for dep in row["deps"]
+        )
+        has_blocker = bool(row["blockers"])
+        if status == "TODO" and not (deps_done and not has_blocker):
+            errors.append(
+                _err(QUEUE_PATH, row["lineno"], "invalid-invariant",
+                     f"`{row_id}` is TODO but not actionable; TODO requires "
+                     "every dependency DONE and Blocker `-`")
+            )
+        elif status == "IN_PROGRESS" and (has_blocker or not deps_done):
+            errors.append(
+                _err(QUEUE_PATH, row["lineno"], "invalid-invariant",
+                     f"`{row_id}` is IN_PROGRESS with violated preconditions; "
+                     "IN_PROGRESS requires dependencies DONE and Blocker `-`")
+            )
+        elif status == "BLOCKED" and not (unmet_dep or has_blocker):
+            errors.append(
+                _err(QUEUE_PATH, row["lineno"], "invalid-invariant",
+                     f"`{row_id}` is BLOCKED without an unfinished dependency "
+                     "or blocker reference")
+            )
+        elif status == "DONE":
+            if has_blocker or not deps_done:
+                errors.append(
+                    _err(QUEUE_PATH, row["lineno"], "invalid-invariant",
+                         f"`{row_id}` is DONE with an unmet dependency or "
+                         "active Blocker; DONE is terminal and requires "
+                         "every dependency DONE and Blocker `-` (the normal "
+                         "IN_PROGRESS -> DONE transition already requires "
+                         "this)")
+                )
+            artifact = row["artifact"].strip()
+            if (
+                "/" in artifact
+                and re.fullmatch(r"[^\s{},;()]+", artifact)
+                and not (base / artifact).exists()
+            ):
+                errors.append(
+                    _err(QUEUE_PATH, row["lineno"], "missing-artifact",
+                         f"DONE row `{row_id}` declares completion artifact "
+                         f"`{artifact}` which does not exist in the repository")
+                )
+
+    phase = state.get("phase")
+    if phase is not None:
+        relevant = {
+            row_id: row
+            for row_id, row in rows.items()
+            if _phase_matches(row["phase"], phase) and row["status"] in QUEUE_STATUSES
+        }
+        expected: dict[str, set[str]] = {
+            "active_queue_items": {
+                row_id for row_id, row in relevant.items()
+                if row["status"] == "IN_PROGRESS"
+            },
+            "next_queue_items": {
+                row_id for row_id, row in relevant.items()
+                if row["status"] == "TODO"
+            },
+            "blocked_queue_items": {
+                row_id for row_id, row in relevant.items()
+                if row["status"] == "BLOCKED"
+            },
+        }
+        for key, want in expected.items():
+            got = state.get(key)
+            if got is None:
+                continue
+            got_set = set(got)
+            for item in sorted(got_set - set(rows)):
+                errors.append(
+                    _err(STATE_PATH, state_fields[key][0], "missing-ref",
+                         f"`{item}` in {key} is not a live queue row")
+                )
+            if {item for item in got_set if item in rows} != want:
+                errors.append(
+                    _err(STATE_PATH, state_fields[key][0], "invalid-invariant",
+                         f"{key} {sorted(got_set)} does not match the "
+                         f"current-phase (phase {phase}) rows with that "
+                         f"status: {sorted(want)}")
+                )
+
+        status = state.get("status")
+        if status in PROJECT_STATUSES and status not in ("PAUSED", "COMPLETE"):
+            actionable = any(
+                row["status"] in ("IN_PROGRESS", "TODO")
+                for row in relevant.values()
+            )
+            any_blocked = any(
+                row["status"] == "BLOCKED" for row in relevant.values()
+            )
+            if actionable and status != "ACTIVE":
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         f"status {status} but current-phase queue rows "
+                         "include actionable TODO/IN_PROGRESS work (expected "
+                         "ACTIVE)")
+                )
+            elif not actionable and any_blocked and status != "BLOCKED":
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         f"status {status} but no current-phase queue row is "
+                         "actionable and at least one is BLOCKED (expected "
+                         "BLOCKED)")
+                )
+            elif not actionable and not any_blocked:
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         f"status {status} but no current-phase queue row is "
+                         "actionable, in progress, or BLOCKED (neither ACTIVE "
+                         "nor BLOCKED is justified; expected PAUSED or "
+                         "COMPLETE)")
+                )
+        if status == "COMPLETE":
+            gate = state.get("current_gate")
+            result = state.get("gate_result")
+            criteria = state.get("failed_gate_criteria")
+            if gate is not None and gate != "NONE":
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         f"status COMPLETE requires current_gate: NONE "
+                         f"(no further gate applies); got `{gate}`")
+                )
+            if result is not None and result != "NONE":
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         f"status COMPLETE requires gate_result: NONE; got "
+                         f"`{result}`")
+                )
+            if criteria is not None and criteria:
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         "status COMPLETE requires an empty "
+                         f"failed_gate_criteria; got {sorted(criteria)}")
+                )
+            unfinished = sorted(
+                row_id for row_id, row in rows.items()
+                if row["status"] in ("TODO", "IN_PROGRESS", "BLOCKED")
+            )
+            if unfinished:
+                errors.append(
+                    _err(STATE_PATH, state_fields["status"][0],
+                         "invalid-invariant",
+                         "status COMPLETE requires every queue row DONE; "
+                         f"not DONE: {unfinished}")
+                )
+    return errors
+
+
 def collect_validation_errors(root: Path | None = None) -> list[str]:
-    """Run A-1 and A-2 together and return every violation (no fail-fast)."""
+    """Run A-1, A-2, and durable-state validation together (no fail-fast)."""
     base = ROOT if root is None else root
     oq_errors, oq_ids = validate_oq_registry(base)
-    return validate_features(base) + oq_errors + validate_feature_schemas(base, oq_ids)
+    return (
+        validate_features(base)
+        + oq_errors
+        + validate_feature_schemas(base, oq_ids)
+        + validate_durable_state(base, oq_ids)
+    )
 
 
 def main() -> None:

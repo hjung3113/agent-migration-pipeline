@@ -1,10 +1,33 @@
 ---
 name: evidence-grading
-description: Use whenever a legacy behavior claim is captured or reviewed to assign an explicit A/B/C/D/? confidence grade and document the supporting observation or inference.
+description: Primary skill when an existing behavior claim already has evidence/inference and must receive or update its A/B/C/D/? confidence grade with a supporting evidence record; do not use as the primary skill for inventing new behavior rules, deciding target behavior, or creating an open question whose answer is not known.
 compatibility: OpenCode project skill
 ---
 
 # Evidence Grading
+
+## Primary artifact boundary
+
+Invoke this as the **primary skill** only when an **existing behavior claim** already has evidence/inference that must receive or update an A/B/C/D/? confidence grade. The primary artifact is the grade plus the supporting evidence record/reference attached to that claim (persisted per the rules below).
+
+Do not use this as the primary skill for:
+
+- inventing a new behavior rule or synthesizing the feature contract — `behavior-contract` owns the contract;
+- deciding target behavior — `target-feature-design` work owns that;
+- creating an open question whose answer is not known — `uncertainty-management` owns the open-question entry.
+
+This skill **composes** with the others: a behavior-contract step may invoke it to grade each material rule; that makes it a supporting skill for that step, not the owner of the contract.
+
+## Skill tie-break
+
+When more than one skill appears applicable:
+
+1. identify the artifact the current step is required to produce or update;
+2. select the skill that owns that primary artifact;
+3. invoke supporting skills only for their narrower sub-output;
+4. return all outputs to the primary agent/coordinator; do not let a supporting skill silently change phase or scope.
+
+Worked example: a runtime capture already confirms an existing rule — use this skill to attach the grade/evidence record; do not create or reopen a behavior contract merely because the word `behavior` appears.
 
 Grades:
 

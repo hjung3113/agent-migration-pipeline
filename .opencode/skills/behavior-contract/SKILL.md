@@ -1,10 +1,33 @@
 ---
 name: behavior-contract
-description: Use after legacy discovery to specify a feature as observable inputs, business rules, outputs, side effects, errors, and comparison semantics independent of WPF/source-file structure.
+description: Primary skill when discovered legacy behavior must be synthesized into the feature's observable contract (behavior-contract.md — inputs, rules, outputs, side effects, errors, comparison semantics); do not use as the primary skill for grading one existing claim, registering one new unknown, or a post-implementation parity verdict.
 compatibility: OpenCode project skill
 ---
 
 # Behavior Contract
+
+## Primary artifact boundary
+
+Invoke this as the **primary skill** only when discovered legacy behavior must be synthesized into the feature's observable contract before target design. The primary artifact is `migration/features/{feature-id}/behavior-contract.md`: inputs, business rules, outputs, side effects, errors, comparison semantics, and unresolved items.
+
+Do not use this as the primary skill for:
+
+- assigning a grade to one already-existing claim — `evidence-grading` owns that sub-output;
+- registering one new unanswered unknown — `uncertainty-management` owns the open-question entry;
+- a post-implementation parity verdict — `parity-verification` owns the verification report.
+
+This skill **composes** the other skills rather than competing with them: while writing the contract, grade each material rule with `evidence-grading`, and register a materially unanswered question with `uncertainty-management`. Supporting skills produce only their narrower sub-output and never take over contract ownership.
+
+## Skill tie-break
+
+When more than one skill appears applicable:
+
+1. identify the artifact the current step is required to produce or update;
+2. select the skill that owns that primary artifact;
+3. invoke supporting skills only for their narrower sub-output;
+4. return all outputs to the primary agent/coordinator; do not let a supporting skill silently change phase or scope.
+
+Worked example: source suggests a rule but runtime evidence is unavailable while the contract is being written — this skill owns the step; `evidence-grading` grades the rule from available evidence; `uncertainty-management` is also used only if an unanswered question materially remains.
 
 Use `docs/templates/behavior-contract.md`.
 

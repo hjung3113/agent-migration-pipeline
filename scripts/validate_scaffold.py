@@ -138,6 +138,116 @@ def validate_agents_and_commands() -> None:
                 fail(f"missing description: {path.relative_to(ROOT)}")
 
 
+# Issue #7 agent routing contract: docs/09-agent-skill-routing.md.
+# Lightweight structural enforcement so a future agent definition cannot
+# silently omit its deterministic routing sections: every
+# .opencode/agents/*.md must carry a frontmatter description, the three
+# routing sections (positive triggers, negative triggers, primary output
+# ownership), and the standard `## Escalation` section with its required
+# fields. Permission-frontmatter shape is intentionally NOT validated here
+# (role-boundary permission work is owned separately, e.g. Issue #8).
+
+AGENTS_DIR = ".opencode/agents"
+
+AGENT_ROUTING_SECTIONS = (
+    "Invoke when",
+    "Do not invoke for",
+    "Primary output ownership",
+)
+
+ESCALATION_HEADING = "Escalation"
+
+ESCALATION_FIELDS = (
+    "Reason",
+    "Completed",
+    "Evidence",
+    "Unresolved",
+    "Impact",
+    "Recommended next route",
+    "Stop current gate",
+)
+
+H2_RE = re.compile(r"^##\s+(.+?)\s*$")
+
+
+def _h2_sections(text: str) -> dict[str, str]:
+    """Map lowercased H2 titles to their raw body text (no fenced-code
+    awareness needed: agent definitions keep headings outside fences)."""
+    sections: dict[str, str] = {}
+    title: str | None = None
+    body: list[str] = []
+    for line in text.splitlines():
+        match = H2_RE.match(line)
+        if match:
+            if title is not None:
+                sections[title] = "\n".join(body)
+            title = match.group(1).lower()
+            body = []
+        elif title is not None:
+            body.append(line)
+    if title is not None:
+        sections[title] = "\n".join(body)
+    return sections
+
+
+def _agent_description(text: str) -> str:
+    """Extract the top-level frontmatter `description:` line's value
+    without a YAML parser (frontmatter may contain nested blocks)."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return ""
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line.startswith("description:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def validate_agent_routing(root: Path | None = None) -> list[str]:
+    """Issue #7 structural routing checks for every .opencode/agents/*.md."""
+    base = ROOT if root is None else root
+    agents_dir = base / AGENTS_DIR
+    if not agents_dir.is_dir():
+        return [f"{AGENTS_DIR}: agent definition directory missing"]
+    paths = sorted(agents_dir.glob("*.md"))
+    if not paths:
+        return [f"{AGENTS_DIR}: no agent definitions found"]
+    errors: list[str] = []
+    for path in paths:
+        rel = path.relative_to(base).as_posix()
+        text = path.read_text(encoding="utf-8")
+        if not _agent_description(text):
+            errors.append(
+                f"{rel}: missing frontmatter description "
+                "(docs/09 frontmatter description contract)"
+            )
+        sections = _h2_sections(text)
+        for title in AGENT_ROUTING_SECTIONS:
+            body = sections.get(title.lower())
+            if body is None:
+                errors.append(
+                    f"{rel}: missing required routing section "
+                    f"'## {title}' (docs/09-agent-skill-routing.md)"
+                )
+            elif not body.strip():
+                errors.append(f"{rel}: routing section '## {title}' is empty")
+        escalation = sections.get(ESCALATION_HEADING.lower())
+        if escalation is None:
+            errors.append(
+                f"{rel}: missing required routing section "
+                f"'## {ESCALATION_HEADING}' (docs/09 escalation contract)"
+            )
+        else:
+            for field in ESCALATION_FIELDS:
+                if field not in escalation:
+                    errors.append(
+                        f"{rel}: '## {ESCALATION_HEADING}' missing required "
+                        f"field '{field}'"
+                    )
+    return errors
+
+
 def parse_feature_card(text: str) -> tuple[dict[str, str], list[str]]:
     """Parse the constrained flat frontmatter of a feature-card.md.
 
@@ -1605,7 +1715,7 @@ def main() -> None:
     validate_json()
     validate_skills()
     validate_agents_and_commands()
-    errors = collect_validation_errors()
+    errors = validate_agent_routing() + collect_validation_errors()
     if errors:
         raise SystemExit(
             "ERROR: repository validation failed "

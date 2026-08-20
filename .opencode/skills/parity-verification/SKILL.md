@@ -1,10 +1,32 @@
 ---
 name: parity-verification
-description: Use after implementation and independent review to compare legacy and target behavior using the strongest available composite judge and produce an evidence-based verification report.
+description: Primary skill when implementation and independent review are complete and legacy/contract expectations must be compared with target observations; the primary artifact is the verification report and PASS/FAIL/PARTIAL/BLOCKED verdict under predeclared comparison semantics; do not use for discovering/specifying legacy behavior or changing the contract/normalization rules after results are known.
 compatibility: OpenCode project skill
 ---
 
 # Parity Verification
+
+## Primary artifact boundary
+
+Invoke this as the **primary skill** only when implementation and independent review are complete and legacy/contract expectations must be compared with target observations. The primary artifact is the verification report and parity verdict using the **predefined** judge/comparison semantics (`migration/features/{feature-id}/verification.md`).
+
+Do not use this as the primary skill for:
+
+- discovering or specifying legacy behavior — `behavior-contract` (synthesis) and the analysis roles own that; evidence records are **inputs** here, not the primary output;
+- changing the behavior contract or normalization rules after results are known — a comparison-semantics gap is `BLOCKED`, never a post-hoc redefinition.
+
+This skill **composes** with the others: it consumes graded evidence records produced by `evidence-grading` and treats unresolved comparison semantics as open questions for `uncertainty-management`, without owning either artifact.
+
+## Skill tie-break
+
+When more than one skill appears applicable:
+
+1. identify the artifact the current step is required to produce or update;
+2. select the skill that owns that primary artifact;
+3. invoke supporting skills only for their narrower sub-output;
+4. return all outputs to the primary agent/coordinator; do not let a supporting skill silently change phase or scope.
+
+Worked example: the target implementation has run and its callback order must be compared with the approved contract — use this skill; evidence records are inputs, not the primary output.
 
 Use `docs/templates/verification.md` and persist the feature result as `migration/features/{feature-id}/verification.md`.
 

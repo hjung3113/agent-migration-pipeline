@@ -3,9 +3,100 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-20
+Last updated: 2026-08-21
 
-## Next session: Issue #14 done, merged; continue Track P at (#7, #8)
+## Next session: Issues #7/#8 done, merged; continue Track P at #5 -> #13
+
+Issues #7 (agent/skill routing determinism) and #8 (migration-designer
+permission boundary) are implemented, reviewed, and merged to `main`
+against their merged canonical designs `docs/09-agent-skill-routing.md`
+and `docs/10-agent-role-boundary.md`. Built in parallel by opencode
+(glm-5.3, `--variant low` for #8, `--variant high` for #7) in separate
+Orca worktrees off the same base, per the plan's P-R lane note that #7/#8
+are independent scopes.
+
+- **#8** (PR #58, squash-merged as `d1483a5`): `migration-designer`
+  frontmatter now has deny-by-default granular `edit` (catch-all `deny`
+  before a narrow `ask` exception for `migration/features/*/
+  target-feature-design.md`, last-match-wins), `bash: deny`, and new
+  `task: deny` (closes the implementer-delegation bypass the design
+  called out). Body states the designer's only direct durable write and
+  that all other changes return to `migration-coordinator`.
+- **#7** (PR #59, squash-merged as `1019e19`): all 8 `.opencode/agents/
+  *.md` got a 3-part frontmatter `description` (`Invoke when ... ; owns
+  ... ; do not use for ...`), `## Invoke when` / `## Do not invoke for` /
+  `## Primary output ownership` body sections, and a standard 7-field
+  `## Escalation` section; `migration-coordinator.md` states the 7-step
+  dispatch algorithm and forbids peer-to-peer specialist re-routing; the
+  4 overlapping skills (`behavior-contract`/`evidence-grading`/
+  `uncertainty-management`/`parity-verification`) each got a `## Primary
+  artifact boundary` + `## Skill tie-break` section.
+
+**File-ownership boundary honored across the two branches**: both touch
+`.opencode/agents/migration-designer.md` (#8 owns the `permission:`
+frontmatter block, #7 owns `description:` + body routing/escalation
+sections) — each branch was explicitly instructed not to touch the
+other's region, verified by diff before merge, and the one resulting
+merge conflict (both branches appended content after the same procedure
+step 6) was a trivial concatenation, not a semantic collision.
+
+One #7 implementation run stalled for ~1 hour on a self-dispatched nested
+"adversarial review" subagent task inside `opencode run --auto` (headless
+mode) with zero progress/CPU; killed and resumed with an explicit
+instruction to self-review inline instead of dispatching another agent,
+which completed in ~2 minutes. If a future headless opencode run needs a
+review step, prefer inline self-review over `task`-tool subagent dispatch
+inside `opencode run --auto` unless/until that hang is understood.
+
+Owner adversarial review (via PR comments, both PRs, matching #1/#2/#14's
+diligence) found 4 real gaps, all fixed in follow-up commits before final
+merge (no over-hardening added beyond what each finding actually required):
+
+- PR #58 P1: only static frontmatter checks existed; the design's
+  "Verify behavior at the permission evaluator boundary" requirement was
+  unmet. Fixed by discovering `opencode debug agent <name>` returns the
+  actual resolved, ordered, last-match-wins permission list and `tools`
+  summary the real evaluator produces — used that directly instead of
+  building interactive-session automation. Guarded with
+  `shutil.which("opencode")` skip so environments without the CLI don't
+  break. Landed separately as PR #60 (squash-merged as `b8456aa`) since
+  #58 was already merged when the review comment landed.
+- PR #58 P2: the new test imported `yaml` (PyYAML), but the repo has no
+  dependency manifest anywhere and CI's `repo-guards` job never runs
+  `pytest` — a clean checkout would fail. Replaced with a small parser
+  scoped to the repo's actual flat/one-level `permission:` shape, no
+  external dependency (same commit as the P1 fix, PR #60).
+- PR #59 P2 (#1 of 2): `validate_agent_routing()`'s description check
+  only required non-empty, so a description could regress to something
+  ambiguous (e.g. "migration helper") and still pass — silently
+  reopening the exact initial-selection ambiguity #7 was meant to close.
+  Fixed: now requires the 3 markers every current description actually
+  uses (`Invoke when` / `owns` / `do not use for`).
+- PR #59 P2 (#2 of 2): the 4 overlapping skills had no regression check
+  for their `## Primary artifact boundary` / `## Skill tie-break`
+  sections — `validate_skills()` only checks name/non-empty description,
+  so both new sections could be deleted from any of the 4 with
+  validation staying green. Fixed with new
+  `validate_skill_routing_contract()`, scoped to only those 4 canonical
+  skill files.
+
+Final state on `main`: `python3 scripts/validate_scaffold.py` exits 0;
+`python3 -m pytest scripts/tests/ -q` — 301 passed (262 baseline before
+#7/#8 + 4 (#8) + 3 (#60 runtime checks) + 22 (#7) + 10 (#59 followup) =
+301); `check_doc_links.py` / `check_oq_updates.py` pass.
+
+Next Track P order per plan: `#5 -> #13 -> #6 -> #9 -> #11`. Before
+starting each, redo the "구현 시작 전 체크" 7-item gate in
+`ISSUES-PLAN-DRAFT.md` against current `main`. Per the plan: `#6` now has
+all three of its prerequisites merged (`#5` still pending, `#7`/`#8`
+done) so it cannot start until `#5` lands; `#5` and `#13` are logically
+parallel but the plan says merge sequentially if they touch shared
+coordinator/validator files — check the actual diffs before assuming
+parallel-safe, the way #7/#8 turned out to need careful scoping despite
+looking independent on paper. Rule-13 Track P/D authorization remains in
+effect and has not been revoked.
+
+## Next session (superseded): Issue #14 done, merged; continue Track P at (#7, #8)
 
 Issue #14 (durable-state protocol) is implemented, reviewed, and merged to
 `main` (PR #57, squash-merged as `bc3b946`), against the merged canonical

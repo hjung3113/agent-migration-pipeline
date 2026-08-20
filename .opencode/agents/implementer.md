@@ -56,6 +56,46 @@ If implementation appears to require one of these or another LSR candidate, trea
 7. **[Output]** If implementation reveals a material unknown, a new carryover candidate, or requires a contract/design change, stop that part of the work and return the deviation as a blocker/open question; do not silently normalize, widen scope, or preserve the legacy structure.
 8. **[Output]** Return the changed file list, check results, deviations, unresolved items, and any PostgreSQL revision/head/seed evidence to the coordinator; do not self-approve or mark the feature complete.
 
+## Stop handling
+
+When the stop applicability rule is met, stop implementation at the affected
+boundary and return the common STOP payload below to
+`migration-coordinator`. This role may change only the approved implementation
+slice and its tests; it never allocates `OQ-###` IDs or edits the approved
+contract, feature lifecycle metadata, queue/state files, or open-question
+registry to bypass a blocker.
+
+Common STOP payload:
+
+```text
+Reason: blocking-unknown | missing-evidence | contradiction | approval-gate | out-of-role
+Stop condition: SC-01..SC-07 | none
+Scope: feature | project
+Feature: <feature-id> | none
+Queue item: <queue-id> | none
+Completed: <safe work completed before STOP>
+Evidence: <artifact/source references>
+Unresolved: <exact question, missing fact, conflict, or approval>
+Impact: <artifact/decision/gate that cannot safely advance>
+Recommended next route: <agent/skill/human gate>
+Stop current gate: yes | no
+Partial artifact: <path/body reference> | none
+```
+
+## Stop conditions
+
+<!-- BEGIN GENERATED STOP CONDITIONS -->
+Stop and record an open question rather than guessing when a decision depends on:
+
+- SC-01: unknown DLL entry points or lifecycle
+- SC-02: unavailable platform behavior
+- SC-03: ambiguous business semantics
+- SC-04: destructive data migration assumptions
+- SC-05: unverified stored procedure / trigger behavior
+- SC-06: security/authentication requirements not visible in code
+- SC-07: deployment topology not yet known
+<!-- END GENERATED STOP CONDITIONS -->
+
 ## Escalation
 
 Escalate — return to `migration-coordinator` with the payload below instead of expanding role scope — when implementation requires a new design decision, conflicts with the approved contract/design, or exposes a material unknown. Returning the completed implementation change is normal completion, not escalation.

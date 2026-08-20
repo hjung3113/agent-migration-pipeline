@@ -128,15 +128,17 @@ in place at the end of a session; never create a second handoff file
 
 ## Stop conditions
 
+<!-- BEGIN MANAGED STOP CONDITIONS -->
 Stop and record an open question rather than guessing when a decision depends on:
 
-- unknown DLL entry points or lifecycle
-- unavailable platform behavior
-- ambiguous business semantics
-- destructive data migration assumptions
-- unverified stored procedure / trigger behavior
-- security/authentication requirements not visible in code
-- deployment topology not yet known
+- SC-01: unknown DLL entry points or lifecycle
+- SC-02: unavailable platform behavior
+- SC-03: ambiguous business semantics
+- SC-04: destructive data migration assumptions
+- SC-05: unverified stored procedure / trigger behavior
+- SC-06: security/authentication requirements not visible in code
+- SC-07: deployment topology not yet known
+<!-- END MANAGED STOP CONDITIONS -->
 
 ## Important files
 

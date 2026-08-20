@@ -4,6 +4,15 @@ import json
 import re
 from pathlib import Path
 
+try:
+    from scripts.sync_agent_stop_conditions import (
+        validate_agent_stop_conditions as _validate_agent_stop_conditions,
+    )
+except ModuleNotFoundError:  # direct ``python3 scripts/validate_scaffold.py``
+    from sync_agent_stop_conditions import (
+        validate_agent_stop_conditions as _validate_agent_stop_conditions,
+    )
+
 ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED = [
@@ -313,6 +322,14 @@ def validate_skill_routing_contract(root: Path | None = None) -> list[str]:
             elif not body.strip():
                 errors.append(f"{rel}: section '## {title}' is empty")
     return errors
+
+
+# Issue #13 generated STOP-condition contract: docs/11-stop-condition-contract.md.
+# The parser/sync helper owns marked-registry extraction and agent enumeration;
+# this isolated wrapper makes the contract part of scaffold validation without
+# changing the existing routing or durable-state checks.
+def validate_stop_condition_contract(root: Path | None = None) -> list[str]:
+    return _validate_agent_stop_conditions(ROOT if root is None else root)
 
 
 def parse_feature_card(text: str) -> tuple[dict[str, str], list[str]]:
@@ -1766,7 +1783,7 @@ def validate_durable_state(
 
 
 def collect_validation_errors(root: Path | None = None) -> list[str]:
-    """Run A-1, A-2, and durable-state validation together (no fail-fast)."""
+    """Run artifact, durable-state, and STOP-contract checks (no fail-fast)."""
     base = ROOT if root is None else root
     oq_errors, oq_ids = validate_oq_registry(base)
     return (
@@ -1774,6 +1791,7 @@ def collect_validation_errors(root: Path | None = None) -> list[str]:
         + oq_errors
         + validate_feature_schemas(base, oq_ids)
         + validate_durable_state(base, oq_ids)
+        + validate_stop_condition_contract(base)
     )
 
 

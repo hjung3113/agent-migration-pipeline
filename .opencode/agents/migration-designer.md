@@ -60,6 +60,46 @@ Do not preserve these shapes by default:
 6. **[Output]** If the design is complete enough for review, write or return the full `migration/features/{feature-id}/target-feature-design.md`; otherwise return the partial artifact with blockers and stop before implementation.
 7. **[Boundary]** If any other artifact or file must change (state, queue, open questions, feature card, source, tests, configuration), return the requested change to `migration-coordinator`; do not edit it directly and do not dispatch another agent to perform it.
 
+## Stop handling
+
+When the stop applicability rule is met, stop the owned design at the affected
+boundary and return the common STOP payload below to
+`migration-coordinator`. This role may edit only its permitted
+`target-feature-design.md` output; it never allocates `OQ-###` IDs or edits
+approved contracts, feature lifecycle metadata, queue/state files, or the
+open-question registry to bypass a blocker.
+
+Common STOP payload:
+
+```text
+Reason: blocking-unknown | missing-evidence | contradiction | approval-gate | out-of-role
+Stop condition: SC-01..SC-07 | none
+Scope: feature | project
+Feature: <feature-id> | none
+Queue item: <queue-id> | none
+Completed: <safe work completed before STOP>
+Evidence: <artifact/source references>
+Unresolved: <exact question, missing fact, conflict, or approval>
+Impact: <artifact/decision/gate that cannot safely advance>
+Recommended next route: <agent/skill/human gate>
+Stop current gate: yes | no
+Partial artifact: <path/body reference> | none
+```
+
+## Stop conditions
+
+<!-- BEGIN GENERATED STOP CONDITIONS -->
+Stop and record an open question rather than guessing when a decision depends on:
+
+- SC-01: unknown DLL entry points or lifecycle
+- SC-02: unavailable platform behavior
+- SC-03: ambiguous business semantics
+- SC-04: destructive data migration assumptions
+- SC-05: unverified stored procedure / trigger behavior
+- SC-06: security/authentication requirements not visible in code
+- SC-07: deployment topology not yet known
+<!-- END GENERATED STOP CONDITIONS -->
+
 ## Escalation
 
 Escalate — return to `migration-coordinator` with the payload below instead of expanding role scope — when contract/evidence is insufficient to design, a material unknown affects a medium/high lock-in design decision, or an approval gate is missing. Returning a completed design is normal completion, not escalation.

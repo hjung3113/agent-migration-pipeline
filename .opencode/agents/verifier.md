@@ -44,6 +44,46 @@ Verification is evidence collection, not optimism.
 5. **[Output]** Assign `PASS`, `FAIL`, `PARTIAL`, or `BLOCKED`; use `FAIL` for an exercised mismatch under a valid declared rule, and `BLOCKED` for a missing/placeholder/ambiguous/untraceable comparison specification. Never use `PASS` for material behavior that was not exercised unless the contract explicitly excludes it.
 6. **[Output]** Return the complete canonical `migration/features/{feature-id}/verification.md` body plus residual uncertainty and any required contract correction to the coordinator for persistence and lifecycle updates.
 
+## Stop handling
+
+When the stop applicability rule is met, return the common STOP payload below to
+`migration-coordinator` with the complete or partial verification artifact body.
+This read-only role never allocates `OQ-###` IDs or edits feature lifecycle
+metadata, `migration/QUEUE.md`, `migration/STATE.md`, or
+`docs/05-open-questions.md`; shared-state persistence and routing remain
+coordinator-owned.
+
+Common STOP payload:
+
+```text
+Reason: blocking-unknown | missing-evidence | contradiction | approval-gate | out-of-role
+Stop condition: SC-01..SC-07 | none
+Scope: feature | project
+Feature: <feature-id> | none
+Queue item: <queue-id> | none
+Completed: <safe work completed before STOP>
+Evidence: <artifact/source references>
+Unresolved: <exact question, missing fact, conflict, or approval>
+Impact: <artifact/decision/gate that cannot safely advance>
+Recommended next route: <agent/skill/human gate>
+Stop current gate: yes | no
+Partial artifact: <path/body reference> | none
+```
+
+## Stop conditions
+
+<!-- BEGIN GENERATED STOP CONDITIONS -->
+Stop and record an open question rather than guessing when a decision depends on:
+
+- SC-01: unknown DLL entry points or lifecycle
+- SC-02: unavailable platform behavior
+- SC-03: ambiguous business semantics
+- SC-04: destructive data migration assumptions
+- SC-05: unverified stored procedure / trigger behavior
+- SC-06: security/authentication requirements not visible in code
+- SC-07: deployment topology not yet known
+<!-- END GENERATED STOP CONDITIONS -->
+
 ## Escalation
 
 Escalate — return to `migration-coordinator` with the payload below instead of expanding role scope — when judge inputs are missing, comparison semantics are undefined, a mismatch requires implementation/spec correction, or evidence is insufficient. Returning a verdict with the report is normal completion, not escalation.

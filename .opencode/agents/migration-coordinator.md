@@ -140,6 +140,75 @@ steps above (abort/restart, per those steps, rather than writing over a
 concurrent update). `python3 scripts/validate_scaffold.py` statically
 enforces the same schema/invariant/generation checks.
 
+## Stop handling
+
+Every specialist STOP return uses the common STOP payload below and returns to
+`migration-coordinator`. The coordinator is the only role that interprets it,
+allocates open-question IDs, classifies scope, and persists shared lifecycle
+state.
+
+```text
+Reason: blocking-unknown | missing-evidence | contradiction | approval-gate | out-of-role
+Stop condition: SC-01..SC-07 | none
+Scope: feature | project
+Feature: <feature-id> | none
+Queue item: <queue-id> | none
+Completed: <safe work completed before STOP>
+Evidence: <artifact/source references>
+Unresolved: <exact question, missing fact, conflict, or approval>
+Impact: <artifact/decision/gate that cannot safely advance>
+Recommended next route: <agent/skill/human gate>
+Stop current gate: yes | no
+Partial artifact: <path/body reference> | none
+```
+
+On each return:
+
+1. Check the stop applicability rule. `Stop current gate: no` records a
+   material future dependency but does not block the current bounded task;
+   `yes` prevents the affected gate from advancing. Do not terminate
+   unrelated runnable work or treat an unknown as blocking merely because it
+   exists.
+2. Preserve the returned complete or partial specialist artifact before any
+   lifecycle mutation. A specialist never allocates `OQ-###` IDs or edits
+   shared state as part of STOP handling.
+3. Deduplicate the unresolved fact against `docs/05-open-questions.md`.
+   Reuse the existing unresolved `OQ-###` when the question is equivalent;
+   otherwise allocate the next `OQ-###` only when an actual unanswered fact
+   exists. Approval gates, missing artifacts, contradictions without a new
+   fact, and out-of-role returns do not create an OQ by default.
+4. Classify the affected scope from the payload and durable context. Use
+   `feature` only when the current gate and blocker belong to the named
+   feature/queue item; use `project` when no feature owns the blocked gate.
+   A feature-local STOP must not be promoted to a project-wide blocker merely
+   because the coordinator is handling it.
+5. Persist the blocker with the existing durable-state protocol above as one
+   logical generation transaction. This STOP path **must** reuse the same
+   artifact-first -> `QUEUE.md` generation `N+1` -> `STATE.md` last write,
+   blob re-hash, stale-write recovery, and conservative validation path; it
+   must not introduce a second free-form STATE/QUEUE persistence mechanism.
+   Run `validate_durable_state()` from `scripts/validate_scaffold.py` against
+   the resulting durable files and open-question registry before routing new
+   work.
+6. For a blocking feature-scope canonical unknown, retain the feature's
+   current `stage`, set `blocked: true` in its feature card, set only the
+   affected queue row to `BLOCKED` with its OQ/dependency reference, and
+   update `migration/STATE.md` only if project-level resumability or the
+   project `Next gate` would otherwise be misleading. For a project-scope
+   blocker, do not mutate a feature card, block the affected project queue row,
+   and update project `Status`/`Next gate` with the durable dependency.
+7. For a non-blocking unknown, persist/reuse the OQ and the future artifact or
+   gate dependency without setting feature `blocked`, queue `BLOCKED`, or
+   project `Status: BLOCKED` solely because the question exists. For other
+   STOP reasons, persist the relevant dependency/criterion or approval token
+   without disguising it as an OQ.
+8. When an OQ, prerequisite, approval, or external dependency is later
+   resolved, do not clear `blocked` or move a queue row automatically. Re-read
+   feature, queue, state, gate, and OQ authorities; re-evaluate the affected
+   gate and all its criteria; then clear the blocker and advance lifecycle only
+   in a fresh valid generation transaction. `blocked` is never a replacement
+   for feature `stage`.
+
 ## Procedure
 
 1. **[Input]** Read all required global inputs and resolve the smallest valid queue item plus `{feature-id}` where applicable; if prerequisites are missing or the item is blocked, retain the current feature stage, set/retain `blocked: true` when feature-local, record the blocker, and do not advance the phase.
@@ -161,6 +230,20 @@ enforces the same schema/invariant/generation checks.
 5. Human input resolves facts or supplies explicit authorization; persist it in the referenced artifact before re-evaluating the gate. Do not use chat memory as the gate record.
 
 Never redefine legacy behavior merely to make migration easier.
+
+## Stop conditions
+
+<!-- BEGIN GENERATED STOP CONDITIONS -->
+Stop and record an open question rather than guessing when a decision depends on:
+
+- SC-01: unknown DLL entry points or lifecycle
+- SC-02: unavailable platform behavior
+- SC-03: ambiguous business semantics
+- SC-04: destructive data migration assumptions
+- SC-05: unverified stored procedure / trigger behavior
+- SC-06: security/authentication requirements not visible in code
+- SC-07: deployment topology not yet known
+<!-- END GENERATED STOP CONDITIONS -->
 
 ## Escalation
 

@@ -58,6 +58,45 @@ Similarity can be valid only when the approved design records `RETAINED-JUSTIFIE
 6. **[Output]** Complete the per-LSR structural audit in `review.md`. If no blocking finding remains, explicitly record `REVIEW: PASS` plus residual risks; if blocking findings exist, record `REVIEW: FAIL` and enumerate them without rewriting the implementation.
 7. **[Output]** Return the complete `migration/features/{feature-id}/review.md` body to the coordinator for persistence and queue/state updates.
 
+## Stop handling
+
+When the stop applicability rule is met, return the common STOP payload below to
+`migration-coordinator` with the complete or partial review artifact body. This
+read-only role never allocates `OQ-###` IDs or edits feature lifecycle metadata,
+`migration/QUEUE.md`, `migration/STATE.md`, or `docs/05-open-questions.md`;
+shared-state persistence and routing remain coordinator-owned.
+
+Common STOP payload:
+
+```text
+Reason: blocking-unknown | missing-evidence | contradiction | approval-gate | out-of-role
+Stop condition: SC-01..SC-07 | none
+Scope: feature | project
+Feature: <feature-id> | none
+Queue item: <queue-id> | none
+Completed: <safe work completed before STOP>
+Evidence: <artifact/source references>
+Unresolved: <exact question, missing fact, conflict, or approval>
+Impact: <artifact/decision/gate that cannot safely advance>
+Recommended next route: <agent/skill/human gate>
+Stop current gate: yes | no
+Partial artifact: <path/body reference> | none
+```
+
+## Stop conditions
+
+<!-- BEGIN GENERATED STOP CONDITIONS -->
+Stop and record an open question rather than guessing when a decision depends on:
+
+- SC-01: unknown DLL entry points or lifecycle
+- SC-02: unavailable platform behavior
+- SC-03: ambiguous business semantics
+- SC-04: destructive data migration assumptions
+- SC-05: unverified stored procedure / trigger behavior
+- SC-06: security/authentication requirements not visible in code
+- SC-07: deployment topology not yet known
+<!-- END GENERATED STOP CONDITIONS -->
+
 ## Escalation
 
 Escalate — return to `migration-coordinator` with the payload below instead of expanding role scope — when a finding requires design/spec correction, missing evidence prevents judging severity, or the implementation must return to coordinator/implementer. Returning `REVIEW: PASS` or `REVIEW: FAIL` with findings is normal completion, not escalation.

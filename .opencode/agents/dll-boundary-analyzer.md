@@ -42,6 +42,46 @@ Focus only on the host/DLL contract and platform-dependent behavior.
 5. **[Output]** If evidence requires a compatibility DLL, HTTP bridge, direct host API, or another target shape, record only the constraint that forces it; do not select an architecture that the evidence does not require.
 6. **[Output]** If a material lifecycle, threading, callback, or ownership fact is unknown, return `PARTIAL` or `BLOCKED` with the open question; otherwise return the completed report body to the coordinator.
 
+## Stop handling
+
+When the stop applicability rule is met, return the common STOP payload below to
+`migration-coordinator` with the complete or partial DLL-boundary report body.
+This read-only role never allocates `OQ-###` IDs or edits feature lifecycle
+metadata, `migration/QUEUE.md`, `migration/STATE.md`, or
+`docs/05-open-questions.md`; shared-state persistence and routing remain
+coordinator-owned.
+
+Common STOP payload:
+
+```text
+Reason: blocking-unknown | missing-evidence | contradiction | approval-gate | out-of-role
+Stop condition: SC-01..SC-07 | none
+Scope: feature | project
+Feature: <feature-id> | none
+Queue item: <queue-id> | none
+Completed: <safe work completed before STOP>
+Evidence: <artifact/source references>
+Unresolved: <exact question, missing fact, conflict, or approval>
+Impact: <artifact/decision/gate that cannot safely advance>
+Recommended next route: <agent/skill/human gate>
+Stop current gate: yes | no
+Partial artifact: <path/body reference> | none
+```
+
+## Stop conditions
+
+<!-- BEGIN GENERATED STOP CONDITIONS -->
+Stop and record an open question rather than guessing when a decision depends on:
+
+- SC-01: unknown DLL entry points or lifecycle
+- SC-02: unavailable platform behavior
+- SC-03: ambiguous business semantics
+- SC-04: destructive data migration assumptions
+- SC-05: unverified stored procedure / trigger behavior
+- SC-06: security/authentication requirements not visible in code
+- SC-07: deployment topology not yet known
+<!-- END GENERATED STOP CONDITIONS -->
+
 ## Escalation
 
 Escalate — return to `migration-coordinator` with the payload below instead of expanding role scope — when host behavior cannot be observed, the public contract is ambiguous, or the question belongs to general legacy/DB analysis. Returning the completed dll-boundary report is normal completion, not escalation.

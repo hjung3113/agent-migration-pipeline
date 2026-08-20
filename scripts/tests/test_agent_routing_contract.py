@@ -5,7 +5,7 @@ contract", "Escalation contract", "Frontmatter description contract").
 Every .opencode/agents/*.md must carry a frontmatter description, the
 three deterministic routing sections (positive triggers, negative
 triggers, primary output ownership), and a standard `## Escalation`
-section with its required fields.
+section that delegates its payload to the common STOP contract.
 
 Permission-frontmatter shape is intentionally NOT asserted here
 (role-boundary permission work is owned separately, e.g. Issue #8).
@@ -23,7 +23,7 @@ import pytest
 from scripts.validate_scaffold import (
     ROOT,
     AGENT_ROUTING_SECTIONS,
-    ESCALATION_FIELDS,
+    ESCALATION_STOP_PAYLOAD_MARKER,
     ROUTING_CONTRACT_SKILLS,
     SKILL_ROUTING_SECTIONS,
     validate_agent_routing,
@@ -32,30 +32,13 @@ from scripts.validate_scaffold import (
 
 AGENTS = ".opencode/agents"
 
-_ESCALATION_VALUES = {
-    "Reason": "`out-of-role | missing-evidence | contradiction | "
-    "approval-gate | blocking-unknown`",
-    "Completed": "work already completed within the role",
-    "Evidence": "relevant artifact/evidence references",
-    "Unresolved": "the exact remaining question or conflict",
-    "Impact": "which artifact, decision, or phase gate is affected",
-    "Recommended next route": "agent/skill/human gate requested",
-    "Stop current gate": "`yes` or `no`",
-}
-
-
-def escalation_block(skip_field: str | None = None) -> str:
-    lines = [
-        "## Escalation",
-        "",
-        "Escalate to the coordinator when out of role or blocked.",
-        "",
-    ]
-    for field in ESCALATION_FIELDS:
-        if field == skip_field:
-            continue
-        lines.append(f"- `{field}`: {_ESCALATION_VALUES[field]};")
-    return "\n".join(lines) + "\n"
+def escalation_block() -> str:
+    return (
+        "## Escalation\n\n"
+        "Escalate to the coordinator when out of role or blocked.\n\n"
+        f"Escalation returns use the {ESCALATION_STOP_PAYLOAD_MARKER} "
+        "defined in `## Stop handling` above.\n"
+    )
 
 
 VALID_AGENT_TEMPLATE = """---
@@ -95,10 +78,9 @@ def add_agent(
     name: str = "sample-agent",
     *,
     text: str | None = None,
-    skip_field: str | None = None,
 ) -> Path:
     body = text if text is not None else VALID_AGENT_TEMPLATE.format(
-        escalation=escalation_block(skip_field=skip_field)
+        escalation=escalation_block()
     )
     path = root / AGENTS / f"{name}.md"
     path.write_text(body, encoding="utf-8")
@@ -194,14 +176,17 @@ def test_missing_escalation_section_fails(tmp_path: Path) -> None:
     ]
 
 
-@pytest.mark.parametrize("field", ESCALATION_FIELDS)
-def test_missing_escalation_field_fails(tmp_path: Path, field: str) -> None:
+def test_escalation_without_common_stop_payload_fails(tmp_path: Path) -> None:
     root = make_repo(tmp_path)
-    add_agent(root, skip_field=field)
+    text = VALID_AGENT_TEMPLATE.format(escalation=escalation_block()).replace(
+        ESCALATION_STOP_PAYLOAD_MARKER,
+        "a separate payload",
+    )
+    add_agent(root, text=text)
     errors = validate_agent_routing(root)
     assert errors == [
-        f"{AGENTS}/sample-agent.md: '## Escalation' missing required "
-        f"field '{field}'",
+        f"{AGENTS}/sample-agent.md: '## Escalation' must delegate to the "
+        "common STOP payload (docs/11-stop-condition-contract.md)",
     ]
 
 

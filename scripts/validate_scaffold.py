@@ -167,6 +167,31 @@ ESCALATION_FIELDS = (
     "Stop current gate",
 )
 
+# docs/09's "Frontmatter description contract": a discoverable description
+# states the positive trigger, primary output ownership, and nearest
+# confusing exclusion. Checking only "non-empty" lets a description regress
+# to something ambiguous (e.g. "migration helper") without failing
+# validation, silently reopening the exact ambiguity Issue #7 closed — so
+# require the three markers every current agent description actually uses.
+DESCRIPTION_TRIGGER_RE = re.compile(r"^invoke when\b", re.IGNORECASE)
+DESCRIPTION_OWNERSHIP_MARKER = "owns"
+DESCRIPTION_EXCLUSION_MARKER = "do not use for"
+
+# docs/09's "Skill routing contract": the four overlapping skills are
+# separated by primary artifact, with a tie-break algorithm for composing
+# them. Only these four canonical skills carry the boundary/tie-break
+# sections; other skills are out of scope for Issue #7.
+ROUTING_CONTRACT_SKILLS = (
+    "behavior-contract",
+    "evidence-grading",
+    "uncertainty-management",
+    "parity-verification",
+)
+SKILL_ROUTING_SECTIONS = (
+    "Primary artifact boundary",
+    "Skill tie-break",
+)
+
 H2_RE = re.compile(r"^##\s+(.+?)\s*$")
 
 
@@ -217,11 +242,26 @@ def validate_agent_routing(root: Path | None = None) -> list[str]:
     for path in paths:
         rel = path.relative_to(base).as_posix()
         text = path.read_text(encoding="utf-8")
-        if not _agent_description(text):
+        description = _agent_description(text)
+        if not description:
             errors.append(
                 f"{rel}: missing frontmatter description "
                 "(docs/09 frontmatter description contract)"
             )
+        else:
+            missing_markers = []
+            if not DESCRIPTION_TRIGGER_RE.search(description):
+                missing_markers.append("positive trigger ('Invoke when ...')")
+            if DESCRIPTION_OWNERSHIP_MARKER not in description.lower():
+                missing_markers.append("primary output ownership ('owns ...')")
+            if DESCRIPTION_EXCLUSION_MARKER not in description.lower():
+                missing_markers.append("nearest exclusion ('do not use for ...')")
+            if missing_markers:
+                errors.append(
+                    f"{rel}: frontmatter description missing "
+                    f"{', '.join(missing_markers)} "
+                    "(docs/09 frontmatter description contract)"
+                )
         sections = _h2_sections(text)
         for title in AGENT_ROUTING_SECTIONS:
             body = sections.get(title.lower())
@@ -245,6 +285,33 @@ def validate_agent_routing(root: Path | None = None) -> list[str]:
                         f"{rel}: '## {ESCALATION_HEADING}' missing required "
                         f"field '{field}'"
                     )
+    return errors
+
+
+def validate_skill_routing_contract(root: Path | None = None) -> list[str]:
+    """Issue #7 structural checks for the four overlapping skills' primary-
+    artifact boundary / tie-break sections (docs/09 "Skill routing
+    contract"). Only ``ROUTING_CONTRACT_SKILLS`` are in scope; other skills
+    are unaffected."""
+    base = ROOT if root is None else root
+    skills_dir = base / ".opencode" / "skills"
+    errors: list[str] = []
+    for name in ROUTING_CONTRACT_SKILLS:
+        skill_file = skills_dir / name / "SKILL.md"
+        rel = f".opencode/skills/{name}/SKILL.md"
+        if not skill_file.is_file():
+            errors.append(f"{rel}: canonical routing-contract skill file missing")
+            continue
+        sections = _h2_sections(skill_file.read_text(encoding="utf-8"))
+        for title in SKILL_ROUTING_SECTIONS:
+            body = sections.get(title.lower())
+            if body is None:
+                errors.append(
+                    f"{rel}: missing required section '## {title}' "
+                    "(docs/09-agent-skill-routing.md skill routing contract)"
+                )
+            elif not body.strip():
+                errors.append(f"{rel}: section '## {title}' is empty")
     return errors
 
 
@@ -1715,7 +1782,11 @@ def main() -> None:
     validate_json()
     validate_skills()
     validate_agents_and_commands()
-    errors = validate_agent_routing() + collect_validation_errors()
+    errors = (
+        validate_agent_routing()
+        + validate_skill_routing_contract()
+        + collect_validation_errors()
+    )
     if errors:
         raise SystemExit(
             "ERROR: repository validation failed "

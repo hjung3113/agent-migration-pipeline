@@ -24,7 +24,10 @@ from scripts.validate_scaffold import (
     ROOT,
     AGENT_ROUTING_SECTIONS,
     ESCALATION_FIELDS,
+    ROUTING_CONTRACT_SKILLS,
+    SKILL_ROUTING_SECTIONS,
     validate_agent_routing,
+    validate_skill_routing_contract,
 )
 
 AGENTS = ".opencode/agents"
@@ -238,5 +241,128 @@ def test_empty_agents_directory_fails(tmp_path: Path) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "description,missing",
+    [
+        (
+            "migration helper",
+            "positive trigger ('Invoke when ...'), primary output ownership "
+            "('owns ...'), nearest exclusion ('do not use for ...')",
+        ),
+        (
+            "owns the primary output; do not use for the nearest exclusion.",
+            "positive trigger ('Invoke when ...')",
+        ),
+        (
+            "Invoke when the trigger fires; do not use for the nearest exclusion.",
+            "primary output ownership ('owns ...')",
+        ),
+        (
+            "Invoke when the trigger fires; owns the primary output.",
+            "nearest exclusion ('do not use for ...')",
+        ),
+    ],
+)
+def test_weak_description_fails(tmp_path: Path, description: str, missing: str) -> None:
+    """A description that regresses to something non-deterministic (e.g. a
+    one-line summary with no trigger/ownership/exclusion) must fail — this
+    is the exact ambiguity docs/09's frontmatter description contract
+    exists to prevent from silently reappearing."""
+    root = make_repo(tmp_path)
+    text = VALID_AGENT_TEMPLATE.format(escalation=escalation_block())
+    text = text.replace(
+        "description: Invoke when the trigger fires; owns the primary "
+        "output; do not use for the nearest exclusion.",
+        f"description: {description}",
+    )
+    add_agent(root, text=text)
+    errors = validate_agent_routing(root)
+    assert errors == [
+        f"{AGENTS}/sample-agent.md: frontmatter description missing "
+        f"{missing} (docs/09 frontmatter description contract)",
+    ]
+
+
 def test_real_agent_definitions_are_compliant() -> None:
     assert validate_agent_routing(ROOT) == []
+
+
+# --- Issue #7 skill routing-contract checks (docs/09 "Skill routing
+# contract"): the four overlapping skills must each carry a "Primary
+# artifact boundary" and "Skill tie-break" section. ---
+
+SKILLS_DIR = ".opencode/skills"
+
+VALID_SKILL_TEMPLATE = """---
+name: {name}
+description: Primary skill when the trigger fires; do not use as the primary skill for the nearest exclusion.
+compatibility: OpenCode project skill
+---
+
+# Sample Skill
+
+## Primary artifact boundary
+
+Invoke this as the primary skill only when the trigger fires.
+
+## Skill tie-break
+
+1. identify the artifact the current step must produce.
+"""
+
+
+def make_skill_repo(tmp_path: Path, name: str = "behavior-contract", *, text: str | None = None) -> Path:
+    skill_dir = tmp_path / SKILLS_DIR / name
+    skill_dir.mkdir(parents=True)
+    body = text if text is not None else VALID_SKILL_TEMPLATE.format(name=name)
+    (skill_dir / "SKILL.md").write_text(body, encoding="utf-8")
+    return tmp_path
+
+
+def test_valid_skill_passes(tmp_path: Path) -> None:
+    root = make_skill_repo(tmp_path)
+    assert validate_skill_routing_contract(root) == [
+        f"{SKILLS_DIR}/{name}/SKILL.md: canonical routing-contract skill file missing"
+        for name in ROUTING_CONTRACT_SKILLS
+        if name != "behavior-contract"
+    ]
+
+
+def test_missing_skill_file_fails(tmp_path: Path) -> None:
+    root = tmp_path
+    errors = validate_skill_routing_contract(root)
+    assert errors == [
+        f"{SKILLS_DIR}/{name}/SKILL.md: canonical routing-contract skill file missing"
+        for name in ROUTING_CONTRACT_SKILLS
+    ]
+
+
+@pytest.mark.parametrize("title", SKILL_ROUTING_SECTIONS)
+def test_missing_skill_routing_section_fails(tmp_path: Path, title: str) -> None:
+    text = VALID_SKILL_TEMPLATE.format(name="behavior-contract")
+    marker = f"## {title}\n"
+    start = text.index(marker)
+    tail_marker = "\n## "
+    end = text.find(tail_marker, start + len(marker))
+    text = text[:start] + (text[end + 1 :] if end != -1 else "")
+    root = make_skill_repo(tmp_path, text=text)
+    errors = validate_skill_routing_contract(root)
+    expected_missing = f"{SKILLS_DIR}/behavior-contract/SKILL.md: missing required section '## {title}' (docs/09-agent-skill-routing.md skill routing contract)"
+    assert expected_missing in errors
+
+
+def test_other_skills_are_not_checked(tmp_path: Path) -> None:
+    """A skill outside the four canonical overlapping skills is out of
+    scope for this check even with no routing sections at all."""
+    root = tmp_path
+    (root / SKILLS_DIR / "unrelated-skill").mkdir(parents=True)
+    (root / SKILLS_DIR / "unrelated-skill" / "SKILL.md").write_text(
+        "---\nname: unrelated-skill\ndescription: does something else\n---\n",
+        encoding="utf-8",
+    )
+    errors = validate_skill_routing_contract(root)
+    assert not any("unrelated-skill" in error for error in errors)
+
+
+def test_real_skill_definitions_are_compliant() -> None:
+    assert validate_skill_routing_contract(ROOT) == []

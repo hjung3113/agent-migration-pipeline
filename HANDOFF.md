@@ -5,20 +5,76 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-21
 
-## Follow-up: post-merge PR #61/#62 review gaps fixed
+## Next session: Issues #5/#13 done + PR #61/#62 review followup merged; continue Track P at #6
 
-The seven post-merge findings for Issue #13 / PR #61 and Issue #5 / PR #62
-are fixed on top of `main`. Group A now preserves frontmatter when syncing a
-missing STOP heading and validates STOP enum/free-text values independently;
-Group B routes all eight Escalation sections to the common 12-field STOP
-payload; Group C removes the command precondition completion deadlock from
-all matching command contracts; and Group D validates canonical feature
-artifact names plus per-command argument/read-only invariants with regression
-tests. The scaffold validator passes and the test suite reports 321 passed
-(320 before this follow-up). Functional commits are `27f3849`, `5b5af77`,
-`84e3abf`, and `43025b4`; no push or PR was performed.
+Issues #5 (command execution contract) and #13 (agent STOP condition
+contract) are implemented, reviewed, and merged to `main` against their
+merged canonical designs `docs/10-command-execution-contract.md` and
+`docs/11-stop-condition-contract.md`. Built in parallel by codex
+(`gpt-5.6-luna`, `model_reasoning_effort=max`, per the repo's current
+model-routing policy) in separate Orca worktrees off the same base, per the
+plan's note that #5/#13 are logically parallel. **After merge, the owner left
+post-merge review comments on both PRs (bot review + own review) identifying
+7 real gaps; a third followup PR fixed all of them (PR #63, squash-merged as
+`076d2a0`)** — see below.
 
-## Next session: Issues #5/#13 done, merged; continue Track P at #6
+- **#13** (PR #61, squash-merged as `9ffdacf`): canonical `SC-01..SC-07`
+  registry now lives in a `<!-- BEGIN/END MANAGED STOP CONDITIONS -->` marker
+  block in `AGENTS.md`; new `scripts/sync_agent_stop_conditions.py` generates
+  and checks the identical `## Stop conditions` block across every
+  `.opencode/agents/*.md`; all eight agents also carry a role-appropriate
+  `## Stop handling` section stating the common STOP payload; and
+  `migration-coordinator.md` gets deduplication, OQ allocation,
+  feature/project scope classification, conservative lifecycle persistence,
+  and gate re-evaluation — explicitly reusing Issue #14's already-merged
+  durable-state transaction/validator path (`validate_durable_state()`,
+  generation transaction, blob re-hash) rather than a second persistence
+  mechanism.
+- **#5** (PR #62, squash-merged as `ca3c564`): all seven
+  `.opencode/commands/*.md` files now share one consistent contract
+  (`Arguments` / `Inputs` / `Preconditions` / `Outputs` / `State updates` /
+  `Failure behavior`); `migration-status.md` stays explicitly read-only,
+  consistent with Issue #1's existing validator wiring; new
+  `validate_command_contract()` checks all seven files carry the required
+  sections and that referenced feature-artifact paths use the canonical
+  `<feature-id>` placeholder and canonical singleton names (docs/08),
+  rejecting legacy aliases.
+- **PR #61/#62 followup** (PR #63, squash-merged as `076d2a0`, built the same
+  way in a third isolated codex worktree): fixed all 7 owner-identified
+  post-merge gaps, none requiring a new design decision —
+  - `scripts/sync_agent_stop_conditions.py`: `--write`'s heading-restore path
+    no longer prepends `## Stop conditions` before the YAML frontmatter (it
+    was inserting at document offset 0 instead of at the marker block's own
+    offset); `validate_agent_stop_conditions()` now validates each common
+    STOP payload enum field (`Reason`, `Stop condition`, `Scope`, `Stop
+    current gate`) against its actual permitted values from docs/11, instead
+    of only checking cross-agent string equality (which let identical drift
+    to an invalid value like `Scope: banana` pass undetected).
+  - All 8 `.opencode/agents/*.md` `## Escalation` sections (Issue #7) now
+    delegate to the common 12-field STOP payload (Issue #13) instead of
+    separately restating their own older 7-field list, which was missing the
+    newer `Scope`/`Feature`/`Queue item`/`Partial artifact` fields;
+    `validate_agent_routing()` updated to match (checks for the delegation
+    marker, not the old field list).
+  - All 6 mutating `.opencode/commands/*.md` files had a precondition
+    deadlock: "this run can satisfy the completion artifact" required the
+    run to already fully satisfy its own output (e.g. `migration-design`
+    required a G3-complete, gate-passed `target-feature-design.md` before it
+    could run — the artifact it exists to produce; `migration-review` on a
+    combined review/verification row required `verification.md`, produced by
+    a later `migration-verify` run). Fixed: precondition now requires only
+    phase/artifact-type compatibility; full artifact satisfaction is the bar
+    for marking the row `DONE`, not for starting the run.
+  - `validate_command_contract()` gained a canonical feature-artifact-name
+    check (a typo like `behaviour-contract.md` previously passed silently)
+    and `_validate_command_argument_grammar()`: `migration-status.md` must
+    accept no arguments and its `State updates` must affirmatively state no
+    mutation (negation-aware, so "never mutates" doesn't false-positive); the
+    other six commands must require `--queue <queue-id>`, and the five
+    feature-scoped ones must also require `--feature <feature-id>`
+    (unbracketed) — previously the validator only checked that six H2
+    headings existed and were non-empty, so e.g. giving `migration-status` a
+    `--feature` flag would still pass CI.
 
 Issues #5 (command execution contract) and #13 (agent STOP condition
 contract) are implemented, reviewed, and merged to `main` against their
@@ -79,15 +135,22 @@ text, so no re-review was needed, but future sessions should re-check
 `NEW_COMMITS_DETECTED` fires, in case the worker is still active.
 
 Final state on `main`: `python3 scripts/validate_scaffold.py` exits 0;
-`python3 -m pytest scripts/tests/ -q` — 320 passed (301 baseline before
-#5/#13 + 7 (#13) + 12 (#5) = 320).
+`python3 -m pytest scripts/tests/ -q` — 321 passed (301 baseline before
+#5/#13 + 7 (#13) + 12 (#5) + net +1 from PR #63's followup, which added
+several new regression tests but also consolidated a parametrized
+7-field-check test down to 1 when the old Escalation field list was
+replaced).
 
 Next Track P order per plan: `#6 -> #9 -> #11`. Before starting, redo the
 "구현 시작 전 체크" 7-item gate in `ISSUES-PLAN-DRAFT.md` against current
 `main`. #6 now has all three of its prerequisites merged (#5, #7, #8 —
 command ownership, routing, permission boundary) so it can start
-immediately; consume them rather than re-deciding skill I/O ownership.
-Rule-13 Track P/D authorization remains in effect and has not been revoked.
+immediately; consume them rather than re-deciding skill I/O ownership. As
+with #5/#13, budget time after merge to re-check for owner review comments
+on the resulting PR(s) before considering the issue closed — this session's
+#61/#62 followup shows real regression-worthy gaps can survive the initial
+adversarial pass. Rule-13 Track P/D authorization remains in effect and has
+not been revoked.
 
 ## Historical: Issues #7/#8 done, merged; continue Track P at #5 -> #13
 

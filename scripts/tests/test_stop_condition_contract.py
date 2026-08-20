@@ -168,3 +168,49 @@ def test_sync_writes_the_same_canonical_block_to_every_agent(tmp_path: Path) -> 
             f"## Stop conditions\n\n{AGENT_STOP_BEGIN_MARKER}\n"
             f"{CANONICAL_BODY}\n{AGENT_STOP_END_MARKER}"
         ) in text
+
+
+def test_sync_inserts_missing_heading_after_frontmatter(tmp_path: Path) -> None:
+    agent = (
+        "---\nname: specialist\n---\n\n"
+        f"{AGENT_STOP_BEGIN_MARKER}\n{CANONICAL_BODY}\n"
+        f"{AGENT_STOP_END_MARKER}\n\n## Escalation\n"
+    )
+    root = make_repo(tmp_path, {"specialist.md": agent})
+
+    sync_agent_files(root)
+
+    updated = (root / ".opencode" / "agents" / "specialist.md").read_text(
+        encoding="utf-8"
+    )
+    assert updated.startswith("---\nname: specialist\n---\n")
+    assert updated.index("## Stop conditions") > updated.index("---\n", 4)
+
+
+def test_invalid_uniform_stop_payload_enum_fails(tmp_path: Path) -> None:
+    invalid_values = {
+        (
+            "Reason: blocking-unknown | missing-evidence | contradiction | "
+            "approval-gate | out-of-role"
+        ): "Reason: banana",
+        "Stop condition: SC-01..SC-07 | none": "Stop condition: SC-99 | none",
+        "Scope: feature | project": "Scope: banana",
+        "Stop current gate: yes | no": "Stop current gate: maybe",
+    }
+
+    for index, (original, replacement) in enumerate(invalid_values.items()):
+        invalid_handling = VALID_STOP_HANDLING.replace(original, replacement)
+        invalid_agent = agent_text().replace(VALID_STOP_HANDLING, invalid_handling)
+        case_root = tmp_path / f"case-{index}"
+        case_root.mkdir()
+        root = make_repo(
+            case_root,
+            {"alpha.md": invalid_agent, "beta.md": invalid_agent},
+        )
+
+        errors = validate_agent_stop_conditions(root)
+
+        assert any(
+            "invalid value" in error and "common STOP payload field" in error
+            for error in errors
+        )

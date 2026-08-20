@@ -42,6 +42,35 @@ STOP_PAYLOAD_FIELDS = (
     "Partial artifact:",
 )
 
+STOP_PAYLOAD_ENUMS = {
+    "Reason:": frozenset(
+        {
+            "blocking-unknown",
+            "missing-evidence",
+            "contradiction",
+            "approval-gate",
+            "out-of-role",
+        }
+    ),
+    "Stop condition:": frozenset(CANONICAL_STOP_IDS) | {"none"},
+    "Scope:": frozenset({"feature", "project"}),
+    "Stop current gate:": frozenset({"yes", "no"}),
+}
+
+STOP_PAYLOAD_NONE_OR_TEXT_FIELDS = frozenset(
+    {"Feature:", "Queue item:", "Partial artifact:"}
+)
+
+STOP_PAYLOAD_FREE_TEXT_FIELDS = frozenset(
+    {
+        "Completed:",
+        "Evidence:",
+        "Unresolved:",
+        "Impact:",
+        "Recommended next route:",
+    }
+)
+
 STOP_HANDLING_MARKERS = (
     "common STOP payload",
     "migration-coordinator",
@@ -161,7 +190,11 @@ def _replace_agent_block(text: str, canonical_body: str) -> str:
         end = end_positions[0] + len(AGENT_STOP_END_MARKER)
         updated = text[:start] + block + text[end:]
         if not re.search(r"^##\s+Stop conditions\s*$", updated, re.MULTILINE):
-            updated = "## Stop conditions\n\n" + updated
+            updated = (
+                updated[:start]
+                + "## Stop conditions\n\n"
+                + updated[start:]
+            )
         return updated
 
     headings = list(H2_RE.finditer(text))
@@ -190,6 +223,65 @@ def _replace_agent_block(text: str, canonical_body: str) -> str:
         suffix = text[escalation.start():].lstrip()
         return f"{prefix}\n\n{section}{suffix}"
     return f"{text.rstrip()}\n\n{section.rstrip()}\n"
+
+
+def _validate_stop_payload_values(payload: str, label: str) -> list[str]:
+    """Validate values in the common STOP payload schema.
+
+    Agent files publish the schema, so enum fields are written as a pipe-
+    separated list of permitted values. ``SC-01..SC-07`` is the compact
+    spelling used by docs/11 and expands to the seven canonical IDs here.
+    """
+
+    values: dict[str, list[str]] = {}
+    for line in payload.splitlines():
+        field, separator, value = line.partition(":")
+        if not separator:
+            continue
+        field_name = f"{field.strip()}:"
+        if field_name in STOP_PAYLOAD_FIELDS:
+            values.setdefault(field_name, []).append(value.strip())
+
+    errors: list[str] = []
+    for field in STOP_PAYLOAD_FIELDS:
+        field_values = values.get(field, [])
+        if len(field_values) != 1:
+            errors.append(
+                f"{label}: common STOP payload field {field!r} must occur "
+                f"exactly once; found {len(field_values)}"
+            )
+            continue
+
+        value = field_values[0]
+        if field in STOP_PAYLOAD_ENUMS:
+            options = [option.strip() for option in value.split("|")]
+            expanded_options: list[str] = []
+            for option in options:
+                if option == "SC-01..SC-07":
+                    expanded_options.extend(CANONICAL_STOP_IDS)
+                else:
+                    expanded_options.append(option)
+            if not expanded_options or any(
+                option not in STOP_PAYLOAD_ENUMS[field]
+                for option in expanded_options
+            ):
+                errors.append(
+                    f"{label}: common STOP payload field {field!r} has "
+                    f"invalid value {value!r}"
+                )
+        elif field in STOP_PAYLOAD_NONE_OR_TEXT_FIELDS:
+            options = [option.strip() for option in value.split("|")]
+            if not value or any(not option for option in options):
+                errors.append(
+                    f"{label}: common STOP payload field {field!r} must be "
+                    "'none' or a non-empty value"
+                )
+        elif field in STOP_PAYLOAD_FREE_TEXT_FIELDS and not value:
+            errors.append(
+                f"{label}: common STOP payload field {field!r} must be "
+                "non-empty"
+            )
+    return errors
 
 
 def sync_agent_files(root: Path | None = None) -> list[Path]:
@@ -276,12 +368,14 @@ def validate_agent_stop_conditions(root: Path | None = None) -> list[str]:
                 f"{rel}: '## Stop handling' must contain exactly one fenced "
                 f"common STOP payload; found {len(payloads)}"
             )
-        elif common_payload is None:
-            common_payload = payloads[0]
-        elif payloads[0] != common_payload:
-            errors.append(
-                f"{rel}: common STOP payload drifts from the other agent definitions"
-            )
+        else:
+            errors.extend(_validate_stop_payload_values(payloads[0], rel))
+            if common_payload is None:
+                common_payload = payloads[0]
+            elif payloads[0] != common_payload:
+                errors.append(
+                    f"{rel}: common STOP payload drifts from the other agent definitions"
+                )
     return errors
 
 

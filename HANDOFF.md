@@ -5,26 +5,76 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-21
 
-## Current: Issue #13 implemented on `hjung3113/issue13-stop-condition`
+## Next session: Issues #5/#13 done, merged; continue Track P at #6
 
-Issue #13 is implemented against the merged design in
-`docs/11-stop-condition-contract.md`. The canonical SC-01..SC-07 registry is
-marked in `AGENTS.md`; `scripts/sync_agent_stop_conditions.py` generates and
-checks the identical block across every `.opencode/agents/*.md`; all eight
-agents expose the common STOP payload; and `migration-coordinator.md` applies
-deduplication, OQ allocation, feature/project classification, conservative
-lifecycle persistence, and gate re-evaluation using the existing Issue #14
-durable-state transaction/validator path.
+Issues #5 (command execution contract) and #13 (agent STOP condition
+contract) are implemented, reviewed, and merged to `main` against their
+merged canonical designs `docs/10-command-execution-contract.md` and
+`docs/11-stop-condition-contract.md`. Built in parallel by codex
+(`gpt-5.6-luna`, `model_reasoning_effort=max`, per the repo's current
+model-routing policy) in separate Orca worktrees off the same base, per the
+plan's note that #5/#13 are logically parallel.
 
-- `d65f49d`: canonical registry, sync tool, generated agent blocks, and
-  role-specific STOP handling.
-- `994aa73`: scaffold-validator wiring and seven focused contract tests.
-- `python3 scripts/validate_scaffold.py`: PASS.
-- `python3 -m pytest scripts/tests/ -q`: 307 passed.
+- **#13** (PR #61, squash-merged as `9ffdacf`): canonical `SC-01..SC-07`
+  registry now lives in a `<!-- BEGIN/END MANAGED STOP CONDITIONS -->` marker
+  block in `AGENTS.md`; new `scripts/sync_agent_stop_conditions.py` generates
+  and checks the identical `## Stop conditions` block across every
+  `.opencode/agents/*.md`; all eight agents also carry a role-appropriate
+  `## Stop handling` section stating the common STOP payload; and
+  `migration-coordinator.md` gets deduplication, OQ allocation,
+  feature/project scope classification, conservative lifecycle persistence,
+  and gate re-evaluation — explicitly reusing Issue #14's already-merged
+  durable-state transaction/validator path (`validate_durable_state()`,
+  generation transaction, blob re-hash) rather than a second persistence
+  mechanism.
+- **#5** (PR #62, squash-merged as `ca3c564`): all seven
+  `.opencode/commands/*.md` files now share one consistent contract
+  (`Arguments` / `Inputs` / `Preconditions` / `Outputs` / `State updates` /
+  `Failure behavior`); `migration-status.md` stays explicitly read-only,
+  consistent with Issue #1's existing validator wiring; new
+  `validate_command_contract()` checks all seven files carry the required
+  sections and that referenced feature-artifact paths use the canonical
+  `<feature-id>` placeholder and canonical singleton names (docs/08),
+  rejecting legacy aliases.
 
-No `.opencode/commands/*.md` files or migration-designer permission
-frontmatter were changed. The branch is committed but not pushed; the next
-step is independent review/PR handling if authorized.
+**File-ownership boundary honored across the two branches**: #13 owns
+`.opencode/agents/*.md` + `AGENTS.md`; #5 owns `.opencode/commands/*.md`;
+neither touched the other's files (verified by diff before merge). Both
+additively touched `scripts/validate_scaffold.py` (each adding one isolated
+`validate_*_contract()` function plus a new `collect_validation_errors()`
+term) — #13 merged first, #5's branch was rebased onto the updated `main`
+and the resulting conflict was a trivial concatenation (same pattern as the
+#7/#8 session), not a semantic collision.
+
+One #5 worker run stalled for ~3 minutes mid-exploration (spinner counter
+advancing with no new tool-call output); interrupted (Escape) and redirected
+with "stop exploring, start editing" per the same recovery pattern the
+#7-session handoff documented for opencode headless hangs — this time on
+codex, confirming the recovery pattern generalizes across CLI backends. The
+sibling #13 terminal was also interrupted in the same pass as a false
+positive (it was mid-progress, not stalled) and simply resumed with no lost
+work.
+
+The #13 worker's branch included an extra unreviewed `docs: update handoff
+for issue 13` commit that landed between this session's status check and
+push (a real timing race — the worker kept committing after the review
+snapshot was taken); it was squash-merged along with the reviewed commits.
+Its stale HANDOFF.md content (said "committed but not pushed") is superseded
+by this entry. No functional code was in that commit beyond the handoff
+text, so no re-review was needed, but future sessions should re-check
+`git log <base>..HEAD` immediately before pushing, not only right after
+`NEW_COMMITS_DETECTED` fires, in case the worker is still active.
+
+Final state on `main`: `python3 scripts/validate_scaffold.py` exits 0;
+`python3 -m pytest scripts/tests/ -q` — 320 passed (301 baseline before
+#5/#13 + 7 (#13) + 12 (#5) = 320).
+
+Next Track P order per plan: `#6 -> #9 -> #11`. Before starting, redo the
+"구현 시작 전 체크" 7-item gate in `ISSUES-PLAN-DRAFT.md` against current
+`main`. #6 now has all three of its prerequisites merged (#5, #7, #8 —
+command ownership, routing, permission boundary) so it can start
+immediately; consume them rather than re-deciding skill I/O ownership.
+Rule-13 Track P/D authorization remains in effect and has not been revoked.
 
 ## Historical: Issues #7/#8 done, merged; continue Track P at #5 -> #13
 

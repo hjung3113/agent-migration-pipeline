@@ -41,8 +41,13 @@ The coordinator must verify that:
 - no unresolved blocking review finding remains;
 - valid judges can exercise material behavior, or unexercised behavior is
   explicitly classified as residual uncertainty;
-- the selected queue row is verification work, its phase/work item and
-  completion artifact are compatible, and this run can satisfy that artifact.
+- the selected queue row is verification work, and its phase/work item and
+  completion artifact are compatible with this command's `verification.md`
+  output; this run may produce a valid partial or final step toward that
+  artifact.
+
+The full completion artifact and applicable gate condition are checked only
+when marking the row `DONE`, not as a precondition to starting this run.
 
 `FAIL`, `PARTIAL`, and `BLOCKED` are valid verification results but never
 advance the feature to `done` or complete an insufficient queue row.

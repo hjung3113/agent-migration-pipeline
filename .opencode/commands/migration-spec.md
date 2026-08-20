@@ -44,9 +44,12 @@ The coordinator must verify that:
 - `migration/features/<feature-id>/legacy-map.md` exists;
 - DB/DLL follow-up required by discovery is complete or explicitly recorded
   as a blocker or provisional evidence gap;
-- the selected queue row is specification work, its phase/work item and
-  completion artifact are compatible, and this run can satisfy the artifact
-  before completion.
+- the selected queue row is specification work, and its phase/work item and
+  completion artifact are compatible with this command's outputs; this run
+  may produce a valid partial step toward that artifact.
+
+The full completion artifact and applicable gate condition are checked only
+when marking the row `DONE`, not as a precondition to starting this run.
 
 Materially unresolved behavior stops before design. A failed precondition does
 not start the selected row unless the STOP/state protocols require recording a

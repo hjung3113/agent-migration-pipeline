@@ -44,9 +44,13 @@ The coordinator must verify that:
 - material unknowns affecting the public contract, data model, platform
   boundary, or another medium/high lock-in decision are resolved or explicitly
   allowed as provisional by that gate;
-- the selected queue row is design work, its phase/work item and completion
-  artifact are compatible, and this run can satisfy the artifact before it is
-  completed.
+- the selected queue row is design work, and its phase/work item and
+  completion artifact are compatible with this command's outputs; this run
+  may produce the design artifact as a valid partial step toward that
+  artifact.
+
+The full design completion artifact, including any applicable gate PASS, is
+the bar for marking the row `DONE`, not a precondition to starting this run.
 
 If any precondition fails, stop before `TODO -> IN_PROGRESS` unless the
 protocol requires a durable blocker on the selected row. Do not dispatch

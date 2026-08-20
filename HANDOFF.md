@@ -5,7 +5,28 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-21
 
-## Next session: Issues #7/#8 done, merged; continue Track P at #5 -> #13
+## Current: Issue #13 implemented on `hjung3113/issue13-stop-condition`
+
+Issue #13 is implemented against the merged design in
+`docs/11-stop-condition-contract.md`. The canonical SC-01..SC-07 registry is
+marked in `AGENTS.md`; `scripts/sync_agent_stop_conditions.py` generates and
+checks the identical block across every `.opencode/agents/*.md`; all eight
+agents expose the common STOP payload; and `migration-coordinator.md` applies
+deduplication, OQ allocation, feature/project classification, conservative
+lifecycle persistence, and gate re-evaluation using the existing Issue #14
+durable-state transaction/validator path.
+
+- `d65f49d`: canonical registry, sync tool, generated agent blocks, and
+  role-specific STOP handling.
+- `994aa73`: scaffold-validator wiring and seven focused contract tests.
+- `python3 scripts/validate_scaffold.py`: PASS.
+- `python3 -m pytest scripts/tests/ -q`: 307 passed.
+
+No `.opencode/commands/*.md` files or migration-designer permission
+frontmatter were changed. The branch is committed but not pushed; the next
+step is independent review/PR handling if authorized.
+
+## Historical: Issues #7/#8 done, merged; continue Track P at #5 -> #13
 
 Issues #7 (agent/skill routing determinism) and #8 (migration-designer
 permission boundary) are implemented, reviewed, and merged to `main`

@@ -5,6 +5,19 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-21
 
+## Follow-up: post-merge PR #61/#62 review gaps fixed
+
+The seven post-merge findings for Issue #13 / PR #61 and Issue #5 / PR #62
+are fixed on top of `main`. Group A now preserves frontmatter when syncing a
+missing STOP heading and validates STOP enum/free-text values independently;
+Group B routes all eight Escalation sections to the common 12-field STOP
+payload; Group C removes the command precondition completion deadlock from
+all matching command contracts; and Group D validates canonical feature
+artifact names plus per-command argument/read-only invariants with regression
+tests. The scaffold validator passes and the test suite reports 321 passed
+(320 before this follow-up). Functional commits are `27f3849`, `5b5af77`,
+`84e3abf`, and `43025b4`; no push or PR was performed.
+
 ## Next session: Issues #5/#13 done, merged; continue Track P at #6
 
 Issues #5 (command execution contract) and #13 (agent STOP condition

@@ -52,8 +52,11 @@ The coordinator must verify that:
   G0 checklist in `docs/02-migration-pipeline.md`;
 - output feature IDs do not collide with unrelated existing features;
 - the selected row's phase/work item and completion artifact are compatible
-  with this command, and this run can satisfy that completion artifact before
-  the row is completed.
+  with this command's discovery outputs; this run may produce a valid partial
+  step toward that artifact.
+
+The full completion artifact and applicable gate condition are checked only
+when marking the row `DONE`, not as a precondition to starting this run.
 
 If a precondition cannot be safely satisfied, STOP before durable work unless
 the STOP/state protocols require recording a durable blocker on the selected

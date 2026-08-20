@@ -42,8 +42,14 @@ The coordinator must verify that:
 - the reviewer is independent from the implementer;
 - the contract, evidence, target design, and Rulebook inputs needed to judge
   the implementation are readable;
-- the selected queue row is review work, its phase/work item and completion
-  artifact are compatible, and this run can satisfy that artifact.
+- the selected queue row is review work, and its phase/work item and
+  completion artifact are compatible with this command's `review.md` output;
+  this run may produce a valid partial step toward that artifact.
+
+For a combined review/verification row, `review.md` is the legitimate first
+step and `verification.md` is produced by a later `migration-verify` run. The
+full completion artifact and applicable gate condition are checked only when
+marking the row `DONE`, not as a precondition to starting this run.
 
 Missing judge inputs produce `BLOCKED`, not a fabricated pass. Do not select a
 queue row by fuzzy text, nearest phase, or chat context.

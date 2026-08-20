@@ -46,8 +46,12 @@ The coordinator must verify that:
   present and persisted as the implementation authorization;
 - the approved design names the implementation/test paths and no blocker
   invalidates that design;
-- the selected queue row is implementation work, its phase/work item and
-  completion artifact are compatible, and this run can satisfy that artifact.
+- the selected queue row is implementation work, and its phase/work item and
+  completion artifact are compatible with this command's outputs; this run
+  may produce a valid partial step toward that artifact.
+
+The full completion artifact and applicable gate condition are checked only
+when marking the row `DONE`, not as a precondition to starting this run.
 
 If any item fails, do not edit target code and do not start the selected queue
 row, except for a protocol-required durable blocker recording.

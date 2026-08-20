@@ -25,18 +25,42 @@ CANONICAL_PATHS = (
     "migration/features/<feature-id>/verification.md",
 )
 
+ARGUMENT_GRAMMARS = {
+    "migration-discover.md": "--queue <queue-id> --scope <legacy-scope> [--feature <feature-id>]",
+    "migration-spec.md": "--queue <queue-id> --feature <feature-id>",
+    "migration-design.md": "--queue <queue-id> --feature <feature-id>",
+    "migration-implement.md": "--queue <queue-id> --feature <feature-id>",
+    "migration-review.md": "--queue <queue-id> --feature <feature-id>",
+    "migration-verify.md": "--queue <queue-id> --feature <feature-id>",
+    "migration-status.md": "(empty $ARGUMENTS)",
+}
+
 
 def make_repo(tmp_path: Path) -> Path:
     commands = tmp_path / COMMANDS_DIR
     commands.mkdir(parents=True)
-    sections = "\n\n".join(
-        f"## {title}\n\nThe {title.lower()} contract."
-        for title in COMMAND_CONTRACT_SECTIONS
-    )
-    valid_text = sections + "\n\n" + "\n".join(
-        f"`{path}`" for path in CANONICAL_PATHS
-    )
     for filename in COMMAND_CONTRACT_FILES:
+        section_bodies = {
+            title: f"The {title.lower()} contract."
+            for title in COMMAND_CONTRACT_SECTIONS
+        }
+        section_bodies["Arguments"] = (
+            "```text\n"
+            f"{ARGUMENT_GRAMMARS[filename]}\n"
+            "```"
+        )
+        if filename == "migration-status.md":
+            section_bodies["State updates"] = (
+                "None. migration-status never mutates migration/STATE.md, "
+                "migration/QUEUE.md, feature-card.md, or the OQ registry."
+            )
+        sections = "\n\n".join(
+            f"## {title}\n\n{section_bodies[title]}"
+            for title in COMMAND_CONTRACT_SECTIONS
+        )
+        valid_text = sections + "\n\n" + "\n".join(
+            f"`{path}`" for path in CANONICAL_PATHS
+        )
         (commands / filename).write_text(valid_text, encoding="utf-8")
     return tmp_path
 
@@ -105,6 +129,84 @@ def test_noncanonical_feature_placeholder_fails(tmp_path: Path) -> None:
 
     assert len(errors) == 1
     assert "feature artifact path uses '<feature>'; expected '<feature-id>'" in errors[0]
+
+
+def test_noncanonical_feature_artifact_name_fails(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    path = root / COMMANDS_DIR / COMMAND_CONTRACT_FILES[0]
+    text = path.read_text(encoding="utf-8").replace(
+        "migration/features/<feature-id>/behavior-contract.md",
+        "migration/features/<feature-id>/behaviour-contract.md",
+    )
+    path.write_text(text, encoding="utf-8")
+
+    errors = validate_command_contract(root)
+
+    assert errors == [
+        f"{COMMANDS_DIR}/{COMMAND_CONTRACT_FILES[0]}: feature artifact "
+        "reference 'behaviour-contract.md' is not a canonical singleton name "
+        "(docs/08-feature-artifact-validation.md)"
+    ]
+
+
+def test_status_argument_flag_fails(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    path = root / COMMANDS_DIR / "migration-status.md"
+    text = path.read_text(encoding="utf-8").replace(
+        "(empty $ARGUMENTS)",
+        "--feature <feature-id>",
+    )
+    path.write_text(text, encoding="utf-8")
+
+    errors = validate_command_contract(root)
+
+    assert any(
+        "migration-status must accept no arguments" in error for error in errors
+    )
+
+
+def test_status_mutating_state_updates_fail(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    path = root / COMMANDS_DIR / "migration-status.md"
+    text = path.read_text(encoding="utf-8").replace(
+        "None. migration-status never mutates",
+        "The command writes",
+    )
+    path.write_text(text, encoding="utf-8")
+
+    errors = validate_command_contract(root)
+
+    assert any(
+        "State updates" in error and "never mutates" in error for error in errors
+    )
+
+
+def test_queue_argument_is_required_for_queue_commands(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    path = root / COMMANDS_DIR / "migration-spec.md"
+    text = path.read_text(encoding="utf-8").replace(
+        "--queue <queue-id> --feature <feature-id>",
+        "--feature <feature-id>",
+    )
+    path.write_text(text, encoding="utf-8")
+
+    errors = validate_command_contract(root)
+
+    assert any("must require '--queue <queue-id>'" in error for error in errors)
+
+
+def test_feature_argument_is_required_and_not_bracketed(tmp_path: Path) -> None:
+    root = make_repo(tmp_path)
+    path = root / COMMANDS_DIR / "migration-review.md"
+    text = path.read_text(encoding="utf-8").replace(
+        "--queue <queue-id> --feature <feature-id>",
+        "--queue <queue-id> [--feature <feature-id>]",
+    )
+    path.write_text(text, encoding="utf-8")
+
+    errors = validate_command_contract(root)
+
+    assert any("must require '--feature <feature-id>'" in error for error in errors)
 
 
 def test_real_command_contract_is_compliant() -> None:

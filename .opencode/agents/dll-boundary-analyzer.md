@@ -86,14 +86,6 @@ Stop and record an open question rather than guessing when a decision depends on
 
 Escalate — return to `migration-coordinator` with the payload below instead of expanding role scope — when host behavior cannot be observed, the public contract is ambiguous, or the question belongs to general legacy/DB analysis. Returning the completed dll-boundary report is normal completion, not escalation.
 
-An escalation return must contain:
-
-- `Reason`: `out-of-role | missing-evidence | contradiction | approval-gate | blocking-unknown`;
-- `Completed`: work already completed within the role;
-- `Evidence`: relevant artifact/evidence references;
-- `Unresolved`: the exact remaining question or conflict;
-- `Impact`: which artifact, decision, or phase gate is affected;
-- `Recommended next route`: agent/skill/human gate requested;
-- `Stop current gate`: `yes` or `no`.
-
-`Stop current gate: yes` is required only when proceeding would invent behavior, violate an approval/design gate, or make verification meaningless. Non-blocking unknowns are recorded and returned with `no` so unaffected work can continue.
+Escalation returns use the common 12-field STOP payload defined in
+`## Stop handling` above. The `## Escalation` section only describes when to
+escalate; it does not define a second payload schema.

@@ -152,9 +152,10 @@ def validate_agents_and_commands() -> None:
 # silently omit its deterministic routing sections: every
 # .opencode/agents/*.md must carry a frontmatter description, the three
 # routing sections (positive triggers, negative triggers, primary output
-# ownership), and the standard `## Escalation` section with its required
-# fields. Permission-frontmatter shape is intentionally NOT validated here
-# (role-boundary permission work is owned separately, e.g. Issue #8).
+# ownership), and the standard `## Escalation` section delegating its payload
+# to the common STOP contract. Permission-frontmatter shape is intentionally
+# NOT validated here (role-boundary permission work is owned separately, e.g.
+# Issue #8).
 
 AGENTS_DIR = ".opencode/agents"
 
@@ -165,16 +166,7 @@ AGENT_ROUTING_SECTIONS = (
 )
 
 ESCALATION_HEADING = "Escalation"
-
-ESCALATION_FIELDS = (
-    "Reason",
-    "Completed",
-    "Evidence",
-    "Unresolved",
-    "Impact",
-    "Recommended next route",
-    "Stop current gate",
-)
+ESCALATION_STOP_PAYLOAD_MARKER = "common 12-field STOP payload"
 
 # docs/09's "Frontmatter description contract": a discoverable description
 # states the positive trigger, primary output ownership, and nearest
@@ -287,13 +279,11 @@ def validate_agent_routing(root: Path | None = None) -> list[str]:
                 f"{rel}: missing required routing section "
                 f"'## {ESCALATION_HEADING}' (docs/09 escalation contract)"
             )
-        else:
-            for field in ESCALATION_FIELDS:
-                if field not in escalation:
-                    errors.append(
-                        f"{rel}: '## {ESCALATION_HEADING}' missing required "
-                        f"field '{field}'"
-                    )
+        elif ESCALATION_STOP_PAYLOAD_MARKER not in escalation:
+            errors.append(
+                f"{rel}: '## {ESCALATION_HEADING}' must delegate to the "
+                "common STOP payload (docs/11-stop-condition-contract.md)"
+            )
     return errors
 
 
@@ -360,6 +350,129 @@ _FEATURE_PATH_RE = re.compile(
     r"migration/features/<(?P<placeholder>[^>]+)>/"
     r"(?P<artifact>[A-Za-z0-9][A-Za-z0-9.-]*)"
 )
+
+_FENCED_CODE_BLOCK_RE = re.compile(r"```[^\n]*\n(?P<body>.*?)\n```", re.DOTALL)
+_ARGUMENT_FLAG_RE = re.compile(r"(?<![A-Za-z0-9_])--[A-Za-z0-9][A-Za-z0-9-]*")
+_FEATURE_SCOPED_COMMANDS = frozenset(
+    {
+        "migration-spec.md",
+        "migration-design.md",
+        "migration-implement.md",
+        "migration-review.md",
+        "migration-verify.md",
+    }
+)
+_STATE_PATH_MARKERS = (
+    "state.md",
+    "queue.md",
+    "feature-card",
+    "open-questions",
+    "oq registry",
+)
+_STATE_MUTATION_VERB_RE = re.compile(
+    r"\b(?:change|changes|changed|create|creates|delete|deletes|"
+    r"modify|modifies|mutate|mutates|mutation|persist|persists|"
+    r"repair|repairs|set|sets|transition|transitions|update|updates|"
+    r"write|writes|written)\b",
+    re.IGNORECASE,
+)
+_READ_ONLY_STATE_RE = re.compile(
+    r"(?:^none\b|\bnever\s+mutat\w*\b|\bread[- ]only\b|"
+    r"\bno\s+(?:durable\s+)?mutation\b)",
+    re.IGNORECASE,
+)
+
+
+def _fenced_code_blocks(section: str) -> list[str]:
+    return [match.group("body") for match in _FENCED_CODE_BLOCK_RE.finditer(section)]
+
+
+def _contains_unbracketed_argument(grammar: str, token: str) -> bool:
+    """Return whether ``token`` appears as a required, unbracketed argument."""
+
+    for match in re.finditer(re.escape(token), grammar):
+        line_start = grammar.rfind("\n", 0, match.start()) + 1
+        line_end = grammar.find("\n", match.end())
+        if line_end == -1:
+            line_end = len(grammar)
+        line = grammar[line_start:line_end]
+        offset = match.start() - line_start
+        before = line[:offset]
+        after = line[offset + len(token) :]
+        if re.search(r"\[\s*$", before) or re.match(r"^\s*\]", after):
+            continue
+        return True
+    return False
+
+
+def _has_positive_state_mutation(body: str) -> bool:
+    """Detect a positive mutation statement involving known durable state."""
+
+    for clause in re.split(r"[\n.!?;]+", body.lower()):
+        if not any(marker in clause for marker in _STATE_PATH_MARKERS):
+            continue
+        for match in _STATE_MUTATION_VERB_RE.finditer(clause):
+            prefix = clause[: match.start()]
+            if re.search(
+                r"(?:\bnever|\bno|\bnot|\bwithout|\bdoesn't|\bdoes\s+not)\s*$",
+                prefix,
+            ):
+                continue
+            return True
+    return False
+
+
+def _validate_command_argument_grammar(
+    filename: str,
+    rel: str,
+    sections: dict[str, str],
+) -> list[str]:
+    errors: list[str] = []
+    arguments = sections.get("arguments")
+    if arguments is None:
+        return errors
+    code_blocks = _fenced_code_blocks(arguments)
+    if not code_blocks:
+        return [
+            f"{rel}: '## Arguments' must contain a fenced argument grammar "
+            "(docs/10-command-execution-contract.md)"
+        ]
+    grammar = "\n".join(code_blocks)
+
+    if filename == "migration-status.md":
+        if _ARGUMENT_FLAG_RE.search(grammar):
+            errors.append(
+                f"{rel}: migration-status must accept no arguments; its "
+                "fenced Arguments grammar contains a flag token"
+            )
+        state_updates = sections.get("state updates")
+        if state_updates is None:
+            return errors
+        if not _READ_ONLY_STATE_RE.search(" ".join(state_updates.split())):
+            errors.append(
+                f"{rel}: '## State updates' must affirmatively state that "
+                "migration-status never mutates durable state"
+            )
+        if _has_positive_state_mutation(state_updates):
+            errors.append(
+                f"{rel}: '## State updates' must not describe writing "
+                "STATE.md, QUEUE.md, feature artifacts, or the OQ registry"
+            )
+        return errors
+
+    if not _contains_unbracketed_argument(grammar, "--queue <queue-id>"):
+        errors.append(
+            f"{rel}: '## Arguments' must require '--queue <queue-id>'"
+        )
+    if filename in _FEATURE_SCOPED_COMMANDS and not _contains_unbracketed_argument(
+        grammar, "--feature <feature-id>"
+    ):
+        errors.append(
+            f"{rel}: '## Arguments' must require '--feature <feature-id>'"
+        )
+    return errors
+
+
 def validate_command_contract(root: Path | None = None) -> list[str]:
     """Issue #5 structural checks for all seven command documents.
 
@@ -403,12 +516,25 @@ def validate_command_contract(root: Path | None = None) -> list[str]:
 
         for match in _FEATURE_PATH_RE.finditer(text):
             placeholder = match.group("placeholder")
+            artifact = match.group("artifact")
             if placeholder != "feature-id":
                 errors.append(
                     f"{rel}: feature artifact path uses '<{placeholder}>'; "
                     "expected '<feature-id>' "
                     "(docs/08-feature-artifact-validation.md)"
                 )
+            if (
+                artifact not in CANONICAL_SINGLETON_FILES
+                and artifact not in LEGACY_SINGLETON_ALIASES
+                and artifact != "evidence"
+            ):
+                errors.append(
+                    f"{rel}: feature artifact reference '{artifact}' is not "
+                    "a canonical singleton name "
+                    "(docs/08-feature-artifact-validation.md)"
+                )
+
+        errors.extend(_validate_command_argument_grammar(filename, rel, sections))
 
     return errors
 

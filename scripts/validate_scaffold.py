@@ -332,6 +332,87 @@ def validate_stop_condition_contract(root: Path | None = None) -> list[str]:
     return _validate_agent_stop_conditions(ROOT if root is None else root)
 
 
+# Issue #5 command execution contract: docs/10-command-execution-contract.md.
+# This check is intentionally limited to the seven command entrypoints and
+# their structural contract/path references. Command semantics remain owned by
+# the command documents and their canonical designs.
+
+COMMAND_CONTRACT_DIR = ".opencode/commands"
+COMMAND_CONTRACT_FILES = (
+    "migration-discover.md",
+    "migration-spec.md",
+    "migration-design.md",
+    "migration-implement.md",
+    "migration-review.md",
+    "migration-verify.md",
+    "migration-status.md",
+)
+COMMAND_CONTRACT_SECTIONS = (
+    "Arguments",
+    "Inputs",
+    "Preconditions",
+    "Outputs",
+    "State updates",
+    "Failure behavior",
+)
+
+_FEATURE_PATH_RE = re.compile(
+    r"migration/features/<(?P<placeholder>[^>]+)>/"
+    r"(?P<artifact>[A-Za-z0-9][A-Za-z0-9.-]*)"
+)
+def validate_command_contract(root: Path | None = None) -> list[str]:
+    """Issue #5 structural checks for all seven command documents.
+
+    Every command must expose the six shared contract sections. Any feature
+    artifact path it references must use the ``<feature-id>`` placeholder and
+    the canonical singleton names from docs/08; legacy singleton aliases are
+    rejected in both feature and template paths.
+    """
+    base = ROOT if root is None else root
+    commands_dir = base / COMMAND_CONTRACT_DIR
+    errors: list[str] = []
+    for filename in COMMAND_CONTRACT_FILES:
+        path = commands_dir / filename
+        rel = f"{COMMAND_CONTRACT_DIR}/{filename}"
+        if not path.is_file():
+            errors.append(f"{rel}: command contract file missing")
+            continue
+
+        text = path.read_text(encoding="utf-8")
+        sections = _h2_sections(text)
+        for title in COMMAND_CONTRACT_SECTIONS:
+            body = sections.get(title.lower())
+            if body is None:
+                errors.append(
+                    f"{rel}: missing required command contract section "
+                    f"'## {title}' (docs/10-command-execution-contract.md)"
+                )
+            elif not body.strip():
+                errors.append(f"{rel}: command contract section '## {title}' is empty")
+
+        for alias, canonical in LEGACY_SINGLETON_ALIASES.items():
+            alias_re = re.compile(
+                rf"(?<![A-Za-z0-9_-]){re.escape(alias)}(?![A-Za-z0-9_.-])"
+            )
+            if alias_re.search(text):
+                errors.append(
+                    f"{rel}: non-canonical feature artifact reference "
+                    f"'{alias}'; use '{canonical}' "
+                    "(docs/08-feature-artifact-validation.md)"
+                )
+
+        for match in _FEATURE_PATH_RE.finditer(text):
+            placeholder = match.group("placeholder")
+            if placeholder != "feature-id":
+                errors.append(
+                    f"{rel}: feature artifact path uses '<{placeholder}>'; "
+                    "expected '<feature-id>' "
+                    "(docs/08-feature-artifact-validation.md)"
+                )
+
+    return errors
+
+
 def parse_feature_card(text: str) -> tuple[dict[str, str], list[str]]:
     """Parse the constrained flat frontmatter of a feature-card.md.
 
@@ -1787,7 +1868,8 @@ def collect_validation_errors(root: Path | None = None) -> list[str]:
     base = ROOT if root is None else root
     oq_errors, oq_ids = validate_oq_registry(base)
     return (
-        validate_features(base)
+        validate_command_contract(base)
+        + validate_features(base)
         + oq_errors
         + validate_feature_schemas(base, oq_ids)
         + validate_durable_state(base, oq_ids)

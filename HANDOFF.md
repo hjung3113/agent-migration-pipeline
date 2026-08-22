@@ -3,9 +3,117 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-21
+Last updated: 2026-08-22
 
-## Next session: Issues #5/#13 done + PR #61/#62 review followup merged; continue Track P at #6
+## Next session: Issue #6 done, merged; continue Track P at #9 -> #11
+
+Issue #6 (skill execution contract) is implemented, reviewed, and merged to
+`main` (PR #64, squash-merged as `5ef270d`), against the merged canonical
+design `docs/10-skill-execution-contract.md`. Built via a three-stage
+pipeline instead of the earlier "opencode/codex per branch" pattern:
+
+1. **Gate check + execution plan** — opencode (glm-5.3, `--variant high`,
+   `--auto`) re-ran the ISSUES-PLAN-DRAFT "구현 시작 전 체크" 7-item gate for
+   #6 against current `main` (all 7 passed, no blockers) and wrote
+   `migration/ISSUE-6-EXECUTION-PLAN.md` — a DAG task breakdown (T-V1
+   validator task + S-1..S-9 one per skill file, all mutually
+   file-disjoint so fully parallel in principle, executed as one physical
+   PR per the repo's "no mixed-contract state" precedent) plus 4 derived
+   judgment calls (P-1..P-4, e.g. normalizing `{feature-id}` ->
+   `<feature-id>` to match the command layer) and explicit design-gate
+   reopen triggers. Committed as `e16ccda` on branch `hjung3113/issue6-plan`.
+2. **Implementation** — codex (`gpt-5.6-luna`, `model_reasoning_effort=max`)
+   executed that plan verbatim in the same worktree/branch: added
+   `validate_skill_execution_contract()` to `scripts/validate_scaffold.py`
+   (6 structural checks: existence, 5-section presence/order,
+   `[Input]`/`[Output]` markers in Procedure, canonical `<feature-id>` +
+   singleton path via the existing `_FEATURE_PATH_RE`, legacy-alias
+   rejection, `BLOCKED`/`PARTIAL` mention in Branches) plus
+   `scripts/tests/test_skill_execution_contract.py` (20 tests), and
+   rewrote all 9 `.opencode/skills/*/SKILL.md` into the ordered
+   `Inputs`/`Outputs`/`Procedure`/`Branches`/`Done means` contract. Opened
+   PR #64.
+3. **Independent adversarial review (T-R1)** — a fresh Opus subagent was
+   deliberately run in two phases to avoid anchoring: phase 1 saw only the
+   PR title/body (no diff) and wrote a review checklist/hypotheses from
+   that alone; phase 2 was given the actual diff and repo access and told
+   to verify or refute its own phase-1 hypotheses against real code
+   (including running the validator/pytest itself). Verdict: **REQUEST
+   CHANGES**, 10 findings. Two were HIGH and would not have been caught by
+   the green validator/pytest suite:
+   - **F1** — `feature-migration/SKILL.md`'s DB-bootstrap Branches rule
+     lost its "unless the approved design declares that path in scope"
+     escape hatch during the 5-section rewrite, becoming an unconditional
+     `BLOCKED`. Combined with `target-feature-design/SKILL.md` requiring
+     the design to declare that same bootstrap path when missing, this
+     was a precondition deadlock on the first DB-backed feature — the
+     same defect *class* PR #61/#62's post-merge review found (a
+     structural rewrite silently dropping a conditional clause).
+   - **F2** — `target-feature-design/SKILL.md` lost its lead-in reference
+     to `docs/templates/target-feature-design.md` and
+     `docs/13-legacy-structure-rejection-contract.md` (the doc that
+     defines the LSR-01..LSR-07 IDs the file requires elsewhere), and
+     `check_doc_links.py` can't catch a *deleted* link.
+   - F3-F6 (MEDIUM): three more skills silently dropped their
+     `docs/templates/*.md` reference; a legacy-discovery guardrail
+     ("don't promote ambiguous/dead behavior to an inferred fact") was
+     dropped; `"where practical"` (an #11-owned hedge phrase, and the
+     evidence doc says explicitly "there is no `where practical` waiver")
+     leaked into two new locations in parity-verification beyond its one
+     canonical, preserved occurrence; and in 3 files the preserved rule
+     sub-blocks (`### Contract authoring rules` etc.) ended up nested
+     inside `## Procedure`, inflating its numbered-step count to 18 against
+     the design's "normally 5-8" guidance.
+   - F7-F9 (LOW): four #7-owned tie-break sections had an unreported
+     wording tweak (`"that primary artifact"` -> `"the primary artifact"`)
+     that loosens routing semantics; one skill's rule was silently
+     broadened; and the PR body's Non-goals claimed the execution plan
+     doc wasn't touched by the PR when it was (included from the T-0
+     commit).
+   - F10 (validator leniency: hardcoded skill-name tuple won't auto-cover
+     a future 10th skill; alias check scans whole file not just feature
+     paths; `_h2_sections()` has no fenced-code awareness) was
+     **deliberately left unfixed** — recorded as a future validator
+     hardening item, not blocking this issue.
+   - What the review confirmed as true and did *not* need changing: test
+     counts (341 total / 20 new) were honest, not padded; all 9 skills got
+     a real 5-section transform with zero leftover `{feature-id}` braces;
+     the new validator genuinely implements all 6 planned checks (not a
+     weaker stand-in); `#11` rule 7, `#10` provenance markers, and `#13`
+     STOP-payload deference were preserved byte-for-byte where it
+     mattered; nothing outside declared scope (`HANDOFF.md`, `docs/08`,
+     `.opencode/agents`, `.opencode/commands`, migration app code) was
+     touched.
+4. **Fix + re-verify** — codex (`gpt-5.6-luna`, max) fixed F1-F8 in
+   commit `eb3e92c` (F1/F2 by restoring the dropped conditional/reference
+   text verbatim rather than reinventing it; F6 by relocating the
+   preserved rule sub-blocks out of `## Procedure` without editing their
+   text) and updated the PR body for F9. Final re-verification: `python3
+   scripts/validate_scaffold.py` exit 0, `python3 -m pytest scripts/tests/
+   -q` — 341 passed, `check_doc_links.py`/`check_oq_updates.py` green.
+   Squash-merged as `5ef270d`.
+
+This F1/F2 pattern (a batch structural rewrite silently dropping a
+conditional clause or a doc reference, invisible to both the validator and
+`check_doc_links.py`) is now the second time this exact failure shape has
+shown up (first in #61/#62's post-merge findings). Future skill/agent-file
+batch rewrites should specifically diff conditional/exception clauses and
+doc-reference lines against the pre-rewrite version, not just check
+structural presence.
+
+Next Track P order per plan: `#9 -> #11`. Before starting #9, redo the
+"구현 시작 전 체크" 7-item gate in `ISSUES-PLAN-DRAFT.md` against current
+`main` — #9 (evidence-grade transition control) shares
+`evidence-grading/SKILL.md` and `scripts/validate_scaffold.py` with this
+session's work, so re-read both as they now stand rather than assuming the
+pre-#6 shape. As with #6, budget time after merge for an independent
+adversarial review pass (the phase-separated PR-body-only-then-diff
+review pattern used this session is worth reusing — it forced the
+reviewer to form falsifiable hypotheses before seeing the code, rather
+than pattern-matching against a diff it already trusted). Rule-13 Track
+P/D authorization remains in effect and has not been revoked.
+
+## Historical: Issues #5/#13 done + PR #61/#62 review followup merged; continue Track P at #6
 
 Issues #5 (command execution contract) and #13 (agent STOP condition
 contract) are implemented, reviewed, and merged to `main` against their

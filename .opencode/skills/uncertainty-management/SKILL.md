@@ -21,7 +21,7 @@ Do not use this as the primary skill for:
 When more than one skill appears applicable:
 
 1. identify the artifact the current step is required to produce or update;
-2. select the skill that owns the primary artifact;
+2. select the skill that owns that primary artifact;
 3. invoke supporting skills only for their narrower sub-output;
 4. return all outputs to the primary agent/coordinator; do not let a supporting skill silently change phase or scope.
 

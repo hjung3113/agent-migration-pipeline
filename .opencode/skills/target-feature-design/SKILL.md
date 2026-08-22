@@ -13,6 +13,7 @@ compatibility: OpenCode project skill
 - [Input] `migration/features/<feature-id>/legacy-map.md`.
 - [Input] `migration/features/<feature-id>/behavior-contract.md`.
 - [Input] Applicable `migration/features/<feature-id>/db-dependency-report.md`, `migration/features/<feature-id>/dll-boundary-report.md`, evidence records, Rulebook constraints, and open questions.
+- [Input] Use `docs/templates/target-feature-design.md` and the canonical structural rejection rules in `docs/13-legacy-structure-rejection-contract.md`.
 - [Input] The applicable design-gate result and issue #8 designer write restrictions.
 
 ## Outputs

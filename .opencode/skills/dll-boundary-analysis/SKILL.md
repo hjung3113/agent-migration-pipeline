@@ -19,7 +19,8 @@ compatibility: OpenCode project skill
 - [Output] For project scope, the report belongs at `migration/evidence/dll-boundary-report.md`.
 - [Output] Confirmed contract facts with evidence, unknowns routed to `docs/05-open-questions.md` or the feature card, candidate compatibility-boundary options, and a recommendation on host-emulator harness feasibility.
 - For a read-only invoking role, return the complete report/update bodies and the selected canonical destination to `migration-coordinator`; direct persistence is permission-bound.
-- This skill never decides that a C# shim is required or unnecessary before host capabilities are known, and never updates `migration/STATE.md`, `migration/QUEUE.md`, or lifecycle metadata.
+- Do not decide that a C# shim is required until host capabilities are known.
+- This skill never updates `migration/STATE.md`, `migration/QUEUE.md`, or lifecycle metadata.
 
 ## Procedure
 

@@ -16,6 +16,7 @@ Use `docs/13-legacy-structure-rejection-contract.md` for stable LSR IDs. Discove
 
 - A validated `FEATURE_ID` and an identifiable, accessible legacy source/runtime scope.
 - [Input] `migration/features/<feature-id>/feature-card.md` when the feature card already exists.
+- [Input] Use `docs/templates/feature-card.md` for feature-card shape when creating or updating that artifact.
 - [Input] Legacy C#/WPF source, MSSQL objects, files, platform APIs, configuration, tests, and approved runtime evidence in scope.
 - [Input] Existing `docs/05-open-questions.md` entries and relevant Rulebook constraints.
 
@@ -35,6 +36,8 @@ Use `docs/13-legacy-structure-rejection-contract.md` for stable LSR IDs. Discove
 5. [Output] Produce or update `migration/features/<feature-id>/legacy-map.md` using `docs/templates/legacy-map.md` and return the complete body or authorized write result.
 6. [Output] Return feature-card and `docs/05-open-questions.md` update requests for material unresolved facts, with provenance and evidence references.
 7. [Input] Re-read the map for unsupported business intent, guessed target replacements, missing dependencies, and unrecorded ambiguity.
+
+Mark ambiguous/dead/conditional behavior as uncertain rather than converting it into an inferred fact.
 
 For every material claim, distinguish a directly visible/captured fact from derived business intent: prefix it `[observed]` or `[inferred]`, never combine both in one bullet, and make inferred claims cite their supporting observation/evidence.
 

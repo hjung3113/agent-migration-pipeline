@@ -37,7 +37,7 @@ compatibility: OpenCode project skill
 
 - If the feature card, approved behavior contract, target design, evidence, explicit `AGENTS.md` rule 13 user gate, or declared implementation path is absent, return `BLOCKED` and do not edit target code.
 - If a required blocking open question is unresolved or a provisional design no longer covers the work, return `BLOCKED`; do not guess or broaden scope.
-- If the approved DB bootstrap/resolver/guard is absent for required DB tests, return `BLOCKED` rather than using manual DDL, raw connection input, or general `DATABASE_URL`.
+- If the approved DB bootstrap/resolver/guard is absent for required DB tests and the approved design does not declare that bootstrap/resolver/guard path in implementation scope, return `BLOCKED` rather than using manual DDL, raw connection input, or general `DATABASE_URL`; when the approved design does declare the path, implement and use only that approved path within scope.
 - If implementation reveals a material design change, stop that part, reopen the design gate, and return `BLOCKED`; do not rewrite `migration/features/<feature-id>/target-feature-design.md` in place as a post-hoc decision.
 - If optional evidence or a non-blocking check is unavailable, continue only with a truthful `PARTIAL` result and explicit residual uncertainty.
 - If implementation behavior conflicts with the approved contract/design, preserve the deviation and route it for review; do not silently repair the contract or declare parity.

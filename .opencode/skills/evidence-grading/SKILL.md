@@ -1,6 +1,6 @@
 ---
 name: evidence-grading
-description: Primary skill when an existing behavior claim already has evidence/inference and must receive or update an A/B/C/D/? confidence grade with a supporting evidence record; do not use as the primary skill for inventing new behavior rules, deciding target behavior, or creating an open question whose answer is not known.
+description: Primary skill when an existing behavior claim already has evidence/inference and must receive or update its A/B/C/D/? confidence grade with a supporting evidence record; do not use as the primary skill for inventing new behavior rules, deciding target behavior, or creating an open question whose answer is not known.
 compatibility: OpenCode project skill
 ---
 
@@ -23,7 +23,7 @@ This skill **composes** with the others: a behavior-contract step may invoke it 
 When more than one skill appears applicable:
 
 1. identify the artifact the current step is required to produce or update;
-2. select the skill that owns the primary artifact;
+2. select the skill that owns that primary artifact;
 3. invoke supporting skills only for their narrower sub-output;
 4. return all outputs to the primary agent/coordinator; do not let a supporting skill silently change phase or scope.
 
@@ -53,7 +53,21 @@ Worked example: a runtime capture already confirms an existing rule — use this
 5. [Input] Check that production data handling, unresolved questions, and record references do not pretend to answer an unknown.
 6. [Output] Return the grade, complete record body or authorized write result, canonical destination, and any `PARTIAL`/`BLOCKED` condition to `migration-coordinator`.
 
-### Grading rules
+## Branches
+
+- If a required claim, evidence reference, or feature scope is missing, return `BLOCKED`; do not manufacture a grade or evidence record.
+- If required runtime evidence is unavailable, return `BLOCKED` when the requested grade transition depends on it; otherwise record the gap and return `PARTIAL` without upgrading the grade.
+- If optional evidence is unavailable, continue only with a truthful provisional/`PARTIAL` record.
+- If evidence conflicts, preserve both sides and return `PARTIAL` or `BLOCKED` until reconciled or explicitly accepted as a known risk.
+- If a material unknown affects the claim's use in a medium/high lock-in decision, route it to `uncertainty-management` and stop the affected decision rather than inferring a grade.
+- If the canonical evidence record already exists, update it in place only when authorized; otherwise return the complete update body to `migration-coordinator`.
+- `BLOCKED` and `PARTIAL` are result labels for this skill; STOP payloads and lifecycle/state transitions remain owned by the applicable contracts and coordinator.
+
+## Done means
+
+The existing claim has a justified A/B/C/D/? grade, separate provenance, reproducible evidence references, contradiction/unknown handling, and a complete canonical evidence record persisted by an authorized role or handed to `migration-coordinator`. No grade-transition policy, queue/state mutation, or target behavior decision was invented here.
+
+## Grading rules
 
 Grades:
 
@@ -81,17 +95,3 @@ Rules:
 - keep direct facts in `Observation` and derived interpretation only in `Inference (optional)`;
 - note if production data cannot be committed and point to an approved internal evidence location instead;
 - contradictory evidence blocks completion until reconciled or explicitly accepted as a known risk.
-
-## Branches
-
-- If a required claim, evidence reference, or feature scope is missing, return `BLOCKED`; do not manufacture a grade or evidence record.
-- If required runtime evidence is unavailable, return `BLOCKED` when the requested grade transition depends on it; otherwise record the gap and return `PARTIAL` without upgrading the grade.
-- If optional evidence is unavailable, continue only with a truthful provisional/`PARTIAL` record.
-- If evidence conflicts, preserve both sides and return `PARTIAL` or `BLOCKED` until reconciled or explicitly accepted as a known risk.
-- If a material unknown affects the claim's use in a medium/high lock-in decision, route it to `uncertainty-management` and stop the affected decision rather than inferring a grade.
-- If the canonical evidence record already exists, update it in place only when authorized; otherwise return the complete update body to `migration-coordinator`.
-- `BLOCKED` and `PARTIAL` are result labels for this skill; STOP payloads and lifecycle/state transitions remain owned by the applicable contracts and coordinator.
-
-## Done means
-
-The existing claim has a justified A/B/C/D/? grade, separate provenance, reproducible evidence references, contradiction/unknown handling, and a complete canonical evidence record persisted by an authorized role or handed to `migration-coordinator`. No grade-transition policy, queue/state mutation, or target behavior decision was invented here.

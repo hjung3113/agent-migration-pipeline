@@ -23,7 +23,7 @@ This skill **composes** the other skills rather than competing with them: while 
 When more than one skill appears applicable:
 
 1. identify the artifact the current step is required to produce or update;
-2. select the skill that owns the primary artifact;
+2. select the skill that owns that primary artifact;
 3. invoke supporting skills only for their narrower sub-output;
 4. return all outputs to the primary agent/coordinator; do not let a supporting skill silently change phase or scope.
 
@@ -55,7 +55,21 @@ Worked example: source suggests a rule but runtime evidence is unavailable while
 6. [Input] Re-read the completed contract for unsupported claims, missing comparison semantics, and conflicts before returning the result.
 7. [Output] Return the canonical destination, complete body or authorized write result, evidence references, and any `PARTIAL`/`BLOCKED` gap to `migration-coordinator`.
 
-### Contract authoring rules
+## Branches
+
+- If a required durable input is missing, return `BLOCKED`; do not synthesize `migration/features/<feature-id>/legacy-map.md` or another missing artifact, and do not advance lifecycle state.
+- If required runtime evidence is unavailable and the next behavior decision depends on it, return `BLOCKED`; otherwise record the gap and return a truthful `PARTIAL` contract.
+- If optional evidence is unavailable, continue only when the result remains explicitly `PARTIAL` or provisional.
+- If evidence conflicts, preserve both sides and return `PARTIAL` or `BLOCKED`; never choose the convenient source silently.
+- If a material unknown changes a medium/high lock-in decision or comparison rule, stop that decision, register the unknown, and do not guess.
+- If `migration/features/<feature-id>/behavior-contract.md` already exists, update it in place only when authorized; otherwise return the complete update body to `migration-coordinator`.
+- `BLOCKED` and `PARTIAL` are skill result labels. Any agent STOP payload and all STATE/QUEUE/lifecycle mutations remain governed by their owning contracts and the coordinator.
+
+## Done means
+
+The feature has a canonical behavior contract with explicit scenario outputs and comparison semantics, every material claim has independent provenance and confidence treatment, unresolved gaps are recorded, and the complete result has been persisted by an authorized role or handed to `migration-coordinator` at the canonical destination. The skill has not advanced lifecycle state.
+
+## Contract authoring rules
 
 For each scenario:
 
@@ -74,17 +88,3 @@ For each scenario:
 Comparison semantics are part of the behavior specification. Never defer a tolerance, normalization, ordering rule, or other comparison assumption to test/helper code. A contract may be PARTIAL, but a material comparison whose semantics are missing or still represented only by template placeholders remains unresolved and will block parity verification until the contract is updated.
 
 Never fill missing behavior with guessed requirements, and never duplicate the same claim under both provenance classes.
-
-## Branches
-
-- If a required durable input is missing, return `BLOCKED`; do not synthesize `migration/features/<feature-id>/legacy-map.md` or another missing artifact, and do not advance lifecycle state.
-- If required runtime evidence is unavailable and the next behavior decision depends on it, return `BLOCKED`; otherwise record the gap and return a truthful `PARTIAL` contract.
-- If optional evidence is unavailable, continue only when the result remains explicitly `PARTIAL` or provisional.
-- If evidence conflicts, preserve both sides and return `PARTIAL` or `BLOCKED`; never choose the convenient source silently.
-- If a material unknown changes a medium/high lock-in decision or comparison rule, stop that decision, register the unknown, and do not guess.
-- If `migration/features/<feature-id>/behavior-contract.md` already exists, update it in place only when authorized; otherwise return the complete update body to `migration-coordinator`.
-- `BLOCKED` and `PARTIAL` are skill result labels. Any agent STOP payload and all STATE/QUEUE/lifecycle mutations remain governed by their owning contracts and the coordinator.
-
-## Done means
-
-The feature has a canonical behavior contract with explicit scenario outputs and comparison semantics, every material claim has independent provenance and confidence treatment, unresolved gaps are recorded, and the complete result has been persisted by an authorized role or handed to `migration-coordinator` at the canonical destination. The skill has not advanced lifecycle state.

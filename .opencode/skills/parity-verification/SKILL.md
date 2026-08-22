@@ -8,7 +8,7 @@ compatibility: OpenCode project skill
 
 ## Primary artifact boundary
 
-Invoke this as the **primary skill** only when implementation and independent review are complete and legacy/contract expectations must be compared with target observations. The primary artifact is the verification report and parity verdict using the **predefined** judge/comparison semantics (`migration/features/{feature-id}/verification.md`).
+Invoke this as the **primary skill** only when implementation and independent review are complete and legacy/contract expectations must be compared with target observations. The primary artifact is the verification report and parity verdict using the **predefined** judge/comparison semantics (`migration/features/<feature-id>/verification.md`).
 
 Do not use this as the primary skill for:
 
@@ -28,7 +28,48 @@ When more than one skill appears applicable:
 
 Worked example: the target implementation has run and its callback order must be compared with the approved contract — use this skill; evidence records are inputs, not the primary output.
 
-Use `docs/templates/verification.md` and persist the feature result as `migration/features/{feature-id}/verification.md`.
+## Inputs
+
+- A validated `FEATURE_ID` and an implementation that is ready for independent verification.
+- [Input] Use `docs/templates/verification.md` as the report shape.
+- [Input] `migration/features/<feature-id>/behavior-contract.md` with all material comparison semantics declared.
+- [Input] `migration/features/<feature-id>/review.md` from an independent reviewer.
+- [Input] The implementation under test and approved `migration/features/<feature-id>/target-feature-design.md`.
+- [Input] Available judge inputs: existing/new tests, characterization fixtures, guarded DB comparisons, outputs, files, logs, events, errors, and approved observations.
+- [Input] Applicable evidence records under `migration/features/<feature-id>/evidence/<evidence-id>.md` and any project-wide evidence.
+
+## Outputs
+
+- [Output] The canonical verdict and verification report at `migration/features/<feature-id>/verification.md`.
+- [Output] Explicit PASS, FAIL, PARTIAL, or BLOCKED result, declared comparison references, mismatches, unverified behavior, and residual uncertainty.
+- For a read-only invoking role, return the complete report body and canonical destination to `migration-coordinator`; direct persistence is allowed only under the role-boundary contract.
+- This skill does not edit implementation, behavior contract, review, `migration/STATE.md`, `migration/QUEUE.md`, or lifecycle metadata.
+
+## Procedure
+
+1. [Input] Read `migration/features/<feature-id>/behavior-contract.md`, `migration/features/<feature-id>/target-feature-design.md`, `migration/features/<feature-id>/review.md`, implementation paths, and evidence records.
+2. [Input] Resolve every material comparison against the contract's `## Comparison semantics` or an explicitly cited Rulebook rule before running the judge.
+3. [Input] Prepare any required PostgreSQL comparison target only through the guarded canonical bootstrap and logical `postgres-test-rw` profile.
+4. [Input] Run the judge against the declared legacy/contract and target observations; validate the judge with a controlled mismatch.
+5. [Output] Report comparisons, mismatches, unverified behavior, judge environment, evidence references, and a PASS/FAIL/PARTIAL/BLOCKED verdict in `migration/features/<feature-id>/verification.md`.
+6. [Input] Check that no test/helper normalized away a mismatch or changed a declared comparison rule.
+7. [Output] Return the complete report body, canonical destination, and any blocking result to `migration-coordinator`.
+
+## Branches
+
+- If a required contract, independent review, implementation, or evidence input is missing, return `BLOCKED`; never fabricate a verdict or report.
+- If a required judge input or runtime source is unavailable, return `BLOCKED` when it prevents a meaningful verdict; otherwise return `PARTIAL` with the unverified behavior recorded.
+- If optional evidence is unavailable, continue only when the verdict remains truthful as `PARTIAL`.
+- If comparisons conflict, preserve the mismatch and return `FAIL`, `PARTIAL`, or `BLOCKED` under the declared semantics; never select the convenient observation.
+- If a comparison rule is missing or a material unknown changes the result, stop with `BLOCKED` and route the contract/open-question decision instead of redefining semantics after results are known.
+- If the canonical report already exists, update it in place only when authorized; otherwise return the complete replacement body to `migration-coordinator`.
+- `BLOCKED`/`PARTIAL` verdicts and the skill result are not the agent common STOP payload; queue/state/lifecycle transitions remain coordinator-owned.
+
+## Done means
+
+The canonical verification report records the predeclared comparison semantics, evidence and environment, controlled judge check, mismatches, unverified behavior, and an honest PASS/FAIL/PARTIAL/BLOCKED verdict. The report is persisted by an authorized role or handed to `migration-coordinator`; no implementation or contract was silently repaired.
+
+## Judge inputs and rules
 
 Potential judge inputs:
 

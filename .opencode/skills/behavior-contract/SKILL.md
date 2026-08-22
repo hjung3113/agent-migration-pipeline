@@ -8,7 +8,7 @@ compatibility: OpenCode project skill
 
 ## Primary artifact boundary
 
-Invoke this as the **primary skill** only when discovered legacy behavior must be synthesized into the feature's observable contract before target design. The primary artifact is `migration/features/{feature-id}/behavior-contract.md`: inputs, business rules, outputs, side effects, errors, comparison semantics, and unresolved items.
+Invoke this as the **primary skill** only when discovered legacy behavior must be synthesized into the feature's observable contract before target design. The primary artifact is `migration/features/<feature-id>/behavior-contract.md`: inputs, business rules, outputs, side effects, errors, comparison semantics, and unresolved items.
 
 Do not use this as the primary skill for:
 
@@ -29,7 +29,47 @@ When more than one skill appears applicable:
 
 Worked example: source suggests a rule but runtime evidence is unavailable while the contract is being written — this skill owns the step; `evidence-grading` grades the rule from available evidence; `uncertainty-management` is also used only if an unanswered question materially remains.
 
-Use `docs/templates/behavior-contract.md`.
+## Inputs
+
+- A validated `FEATURE_ID` and the applicable command scope.
+- [Input] `migration/features/<feature-id>/feature-card.md`.
+- [Input] `migration/features/<feature-id>/legacy-map.md`.
+- [Input] Relevant records under `migration/features/<feature-id>/evidence/<evidence-id>.md` and any approved project-wide evidence under `migration/evidence/<evidence-id>.md`.
+- [Input] Accessible legacy/runtime observations and any supporting DB or DLL reports required by the feature.
+- The routing and command contracts that determine the primary artifact; this skill does not own command arguments or lifecycle transitions.
+
+## Outputs
+
+- [Output] The canonical feature contract at `migration/features/<feature-id>/behavior-contract.md`.
+- [Output] Supporting feature evidence at `migration/features/<feature-id>/evidence/<evidence-id>.md` when a new record is required.
+- For a read-only invoking role, return the complete replacement/update bodies plus their canonical destinations to `migration-coordinator`; do not create a second destination.
+- Persist directly only when the invoking role has permission under the role-boundary contract. This skill never updates `migration/STATE.md`, `migration/QUEUE.md`, or feature lifecycle metadata.
+
+## Procedure
+
+1. [Input] Resolve the feature scope, then read `migration/features/<feature-id>/feature-card.md` and `migration/features/<feature-id>/legacy-map.md` before synthesizing behavior.
+2. [Input] Read relevant evidence, DB/DLL reports, and runtime observations; keep direct facts separate from interpreted intent and route narrower grading or unknown work to its owning skill.
+3. [Output] Use `docs/templates/behavior-contract.md` as the document shape and write the feature result to `migration/features/<feature-id>/behavior-contract.md` or return that complete body to the coordinator.
+4. [Output] For each scenario, record inputs, preconditions, rules, outputs, DB changes, side effects, errors, timing, comparison semantics, provenance, grades, desired corrections, and unresolved questions using the rules below.
+5. [Output] Attach each supporting evidence record to its canonical `migration/features/<feature-id>/evidence/<evidence-id>.md` destination when the contract needs one.
+6. [Input] Re-read the completed contract for unsupported claims, missing comparison semantics, and conflicts before returning the result.
+7. [Output] Return the canonical destination, complete body or authorized write result, evidence references, and any `PARTIAL`/`BLOCKED` gap to `migration-coordinator`.
+
+## Branches
+
+- If a required durable input is missing, return `BLOCKED`; do not synthesize `migration/features/<feature-id>/legacy-map.md` or another missing artifact, and do not advance lifecycle state.
+- If required runtime evidence is unavailable and the next behavior decision depends on it, return `BLOCKED`; otherwise record the gap and return a truthful `PARTIAL` contract.
+- If optional evidence is unavailable, continue only when the result remains explicitly `PARTIAL` or provisional.
+- If evidence conflicts, preserve both sides and return `PARTIAL` or `BLOCKED`; never choose the convenient source silently.
+- If a material unknown changes a medium/high lock-in decision or comparison rule, stop that decision, register the unknown, and do not guess.
+- If `migration/features/<feature-id>/behavior-contract.md` already exists, update it in place only when authorized; otherwise return the complete update body to `migration-coordinator`.
+- `BLOCKED` and `PARTIAL` are skill result labels. Any agent STOP payload and all STATE/QUEUE/lifecycle mutations remain governed by their owning contracts and the coordinator.
+
+## Done means
+
+The feature has a canonical behavior contract with explicit scenario outputs and comparison semantics, every material claim has independent provenance and confidence treatment, unresolved gaps are recorded, and the complete result has been persisted by an authorized role or handed to `migration-coordinator` at the canonical destination. The skill has not advanced lifecycle state.
+
+## Contract authoring rules
 
 For each scenario:
 

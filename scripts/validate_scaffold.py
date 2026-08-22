@@ -314,6 +314,155 @@ def validate_skill_routing_contract(root: Path | None = None) -> list[str]:
     return errors
 
 
+# Issue #6 skill execution contract: docs/10-skill-execution-contract.md.
+# The execution contract applies to the nine skills in the design matrix. It
+# checks deterministic structure and path vocabulary only; branch meaning is
+# intentionally left to review work.
+SKILL_EXECUTION_CONTRACT_SKILLS = (
+    "behavior-contract",
+    "db-migration-analysis",
+    "dll-boundary-analysis",
+    "evidence-grading",
+    "feature-migration",
+    "legacy-discovery",
+    "parity-verification",
+    "target-feature-design",
+    "uncertainty-management",
+)
+SKILL_EXECUTION_CONTRACT_SECTIONS = (
+    "Inputs",
+    "Outputs",
+    "Procedure",
+    "Branches",
+    "Done means",
+)
+SKILL_EXECUTION_SUPPORTING_ARTIFACTS = frozenset(
+    {
+        "db-dependency-report.md",
+        "dll-boundary-report.md",
+        "evidence",
+    }
+)
+
+
+def validate_skill_execution_contract(root: Path | None = None) -> list[str]:
+    """Issue #6 structural checks for every migration skill.
+
+    The check deliberately stays deterministic: it validates the required
+    section shape, durable procedure markers, canonical feature-path
+    vocabulary, and the common BLOCKED/PARTIAL branch vocabulary. Semantic
+    correctness of each branch remains review work under docs/10.
+    """
+    base = ROOT if root is None else root
+    skills_dir = base / ".opencode" / "skills"
+    errors: list[str] = []
+    allowed_artifacts = set(CANONICAL_SINGLETON_FILES)
+    allowed_artifacts.update(SKILL_EXECUTION_SUPPORTING_ARTIFACTS)
+
+    for name in SKILL_EXECUTION_CONTRACT_SKILLS:
+        skill_file = skills_dir / name / "SKILL.md"
+        rel = f".opencode/skills/{name}/SKILL.md"
+        if not skill_file.is_file():
+            errors.append(
+                f"{rel}: skill execution contract file missing "
+                "(docs/10-skill-execution-contract.md)"
+            )
+            continue
+
+        text = skill_file.read_text(encoding="utf-8")
+        sections = _h2_sections(text)
+        heading_positions: dict[str, int] = {}
+        for index, line in enumerate(text.splitlines()):
+            match = H2_RE.match(line)
+            if match:
+                heading_positions[match.group(1).lower()] = index
+
+        for title in SKILL_EXECUTION_CONTRACT_SECTIONS:
+            body = sections.get(title.lower())
+            if body is None:
+                errors.append(
+                    f"{rel}: missing required execution section '## {title}' "
+                    "(docs/10-skill-execution-contract.md)"
+                )
+            elif not body.strip():
+                errors.append(
+                    f"{rel}: execution section '## {title}' is empty "
+                    "(docs/10-skill-execution-contract.md)"
+                )
+
+        required_positions = [
+            heading_positions[title.lower()]
+            for title in SKILL_EXECUTION_CONTRACT_SECTIONS
+            if title.lower() in heading_positions
+        ]
+        if (
+            len(required_positions) == len(SKILL_EXECUTION_CONTRACT_SECTIONS)
+            and required_positions != sorted(required_positions)
+        ):
+            errors.append(
+                f"{rel}: execution sections must appear in this order: "
+                "Inputs, Outputs, Procedure, Branches, Done means "
+                "(docs/10-skill-execution-contract.md)"
+            )
+
+        procedure = sections.get("procedure")
+        if procedure is not None and procedure.strip():
+            for marker in ("[Input]", "[Output]"):
+                if marker not in procedure:
+                    errors.append(
+                        f"{rel}: '## Procedure' must contain at least one "
+                        f"{marker} marker "
+                        "(docs/10-skill-execution-contract.md)"
+                    )
+
+        branches = sections.get("branches")
+        if branches is not None and branches.strip():
+            if not re.search(r"\b(?:BLOCKED|PARTIAL)\b", branches):
+                errors.append(
+                    f"{rel}: '## Branches' must mention BLOCKED or PARTIAL "
+                    "(docs/10-skill-execution-contract.md)"
+                )
+
+        for alias, canonical in LEGACY_SINGLETON_ALIASES.items():
+            alias_re = re.compile(
+                rf"(?<![A-Za-z0-9_-]){re.escape(alias)}(?![A-Za-z0-9_.-])"
+            )
+            if alias_re.search(text):
+                errors.append(
+                    f"{rel}: non-canonical feature artifact reference "
+                    f"'{alias}'; use '{canonical}' "
+                    "(docs/08-feature-artifact-validation.md)"
+                )
+
+        feature_paths = list(_FEATURE_PATH_RE.finditer(text))
+        if not feature_paths:
+            errors.append(
+                f"{rel}: must reference at least one canonical feature artifact "
+                "path using 'migration/features/<feature-id>/' "
+                "(docs/10-skill-execution-contract.md)"
+            )
+        for match in feature_paths:
+            placeholder = match.group("placeholder")
+            artifact = match.group("artifact")
+            if placeholder != "feature-id":
+                errors.append(
+                    f"{rel}: feature artifact path uses '<{placeholder}>'; "
+                    "expected '<feature-id>' "
+                    "(docs/08-feature-artifact-validation.md)"
+                )
+            if (
+                artifact not in allowed_artifacts
+                and artifact not in LEGACY_SINGLETON_ALIASES
+            ):
+                errors.append(
+                    f"{rel}: feature artifact reference '{artifact}' is not "
+                    "canonical "
+                    "(docs/08-feature-artifact-validation.md)"
+                )
+
+    return errors
+
+
 # Issue #13 generated STOP-condition contract: docs/11-stop-condition-contract.md.
 # The parser/sync helper owns marked-registry extraction and agent enumeration;
 # this isolated wrapper makes the contract part of scaffold validation without
@@ -2011,6 +2160,7 @@ def main() -> None:
     errors = (
         validate_agent_routing()
         + validate_skill_routing_contract()
+        + validate_skill_execution_contract()
         + collect_validation_errors()
     )
     if errors:

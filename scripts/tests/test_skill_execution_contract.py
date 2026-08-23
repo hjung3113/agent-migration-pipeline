@@ -88,6 +88,30 @@ def test_real_skill_definitions_are_compliant() -> None:
     assert validate_skill_execution_contract(ROOT) == []
 
 
+def test_evidence_grading_contains_the_grade_change_procedure() -> None:
+    path = ROOT / SKILLS_DIR / "evidence-grading" / "SKILL.md"
+    text = path.read_text(encoding="utf-8")
+    start = text.index("## Grade-change procedure")
+    end = text.index("\n## Branches", start)
+    section = text[start:end]
+    numbered_steps = [
+        line for line in section.splitlines() if line[:2] in {f"{n}." for n in range(1, 9)}
+    ]
+
+    assert len(numbered_steps) == 8
+    assert numbered_steps[0].startswith("1. Identify the claim/scenario")
+    assert numbered_steps[-1].startswith("8. Never delete or rewrite past grade decisions")
+
+
+def test_evidence_grading_preserves_transition_safety_sentences() -> None:
+    path = ROOT / SKILLS_DIR / "evidence-grading" / "SKILL.md"
+    text = path.read_text(encoding="utf-8").lower()
+
+    assert "unresolved contradictory evidence blocks promotion" in text
+    assert "promotion requires newly introduced evidence" in text
+    assert "never delete or rewrite past grade decisions" in text
+
+
 def test_missing_skill_file_is_reported(tmp_path: Path) -> None:
     root = make_repo(tmp_path)
     missing = SKILL_EXECUTION_CONTRACT_SKILLS[-1]

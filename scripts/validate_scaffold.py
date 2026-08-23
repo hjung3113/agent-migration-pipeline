@@ -836,6 +836,14 @@ OQ_ID_RE = re.compile(r"^OQ-\d{3}$")
 OQ_ID_PREFIX_RE = re.compile(r"^OQ-[0-9A-Za-z]+$")
 GRADES = ("A", "B", "C", "D", "?")
 ITEM_GRADES = GRADES + ("N/A",)
+GRADE_HISTORY_COLUMNS = (
+    "Recorded date",
+    "From",
+    "To",
+    "Reason",
+    "Evidence refs",
+)
+ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 PROVENANCE_VALUES = ("observed", "inferred")
 SOURCE_TYPES = (
     "automated-test",
@@ -1180,6 +1188,193 @@ def validate_verification(path: Path, rel: str, errors: list[str]) -> None:
                 )
 
 
+def _validate_grade_history(
+    rel: str,
+    sections: list[tuple[str, list[tuple[int, str]]]],
+    grade: tuple[int, str] | None,
+    history_lineno: int,
+    errors: list[str],
+) -> None:
+    """Validate the append-only grade-history table of one evidence record."""
+    history_sections = [
+        section_lines
+        for title, section_lines in sections
+        if title == "grade history"
+    ]
+    if not history_sections:
+        errors.append(
+            _err(
+                rel,
+                history_lineno,
+                "missing-history",
+                "evidence record must contain a `## Grade history` section",
+            )
+        )
+        return
+    if len(history_sections) > 1:
+        errors.append(
+            _err(
+                rel,
+                history_lineno,
+                "invalid-schema",
+                "evidence record must contain only one `## Grade history` section",
+            )
+        )
+
+    section_lines = history_sections[0]
+    tables = list(_parse_tables(section_lines))
+    if not tables:
+        errors.append(
+            _err(
+                rel,
+                section_lines[0][0] if section_lines else history_lineno,
+                "invalid-schema",
+                "`## Grade history` must contain a Markdown table",
+            )
+        )
+        return
+    if len(tables) > 1:
+        errors.append(
+            _err(
+                rel,
+                tables[1][0],
+                "invalid-schema",
+                "`## Grade history` must contain exactly one Markdown table",
+            )
+        )
+
+    header_lineno, headers, rows = tables[0]
+    expected_headers = list(GRADE_HISTORY_COLUMNS)
+    if headers != expected_headers:
+        errors.append(
+            _err(
+                rel,
+                header_lineno,
+                "invalid-schema",
+                "grade history columns must be exactly "
+                + " | ".join(expected_headers),
+            )
+        )
+    if not rows:
+        errors.append(
+            _err(
+                rel,
+                header_lineno,
+                "missing-history",
+                "grade history must contain at least one decision row",
+            )
+        )
+        return
+
+    previous_to: str | None = None
+    final_to: str | None = None
+    for index, (row_lineno, original_cells) in enumerate(rows):
+        cells = list(original_cells)
+        if len(cells) != len(GRADE_HISTORY_COLUMNS):
+            errors.append(
+                _err(
+                    rel,
+                    row_lineno,
+                    "invalid-schema",
+                    "grade history rows must contain exactly five cells",
+                )
+            )
+            cells.extend([""] * (len(GRADE_HISTORY_COLUMNS) - len(cells)))
+            cells = cells[: len(GRADE_HISTORY_COLUMNS)]
+
+        recorded_date, from_grade, to_grade, reason, evidence_refs = cells
+        if not ISO_DATE_RE.fullmatch(recorded_date):
+            errors.append(
+                _err(
+                    rel,
+                    row_lineno,
+                    "invalid-format",
+                    "Recorded date must use YYYY-MM-DD",
+                )
+            )
+
+        if index == 0:
+            if from_grade != "—":
+                errors.append(
+                    _err(
+                        rel,
+                        row_lineno,
+                        "invalid-invariant",
+                        "initial row From must be `—`",
+                    )
+                )
+        elif from_grade not in GRADES:
+            errors.append(
+                _err(
+                    rel,
+                    row_lineno,
+                    "invalid-enum",
+                    f"history From `{from_grade}`; expected A|B|C|D|?",
+                )
+            )
+        elif previous_to is not None and from_grade != previous_to:
+            errors.append(
+                _err(
+                    rel,
+                    row_lineno,
+                    "invalid-invariant",
+                    "history chain is broken: From must equal the preceding row's To",
+                )
+            )
+
+        if to_grade not in GRADES:
+            errors.append(
+                _err(
+                    rel,
+                    row_lineno,
+                    "invalid-enum",
+                    f"history To `{to_grade}`; expected A|B|C|D|?",
+                )
+            )
+        else:
+            final_to = to_grade
+            previous_to = to_grade
+
+        if not reason:
+            errors.append(
+                _err(
+                    rel,
+                    row_lineno,
+                    "invalid-invariant",
+                    "Reason must not be empty in grade history",
+                )
+            )
+
+        if not evidence_refs and not (index == 0 and to_grade == "?"):
+            errors.append(
+                _err(
+                    rel,
+                    row_lineno,
+                    "invalid-invariant",
+                    "Evidence refs must not be empty for this grade decision",
+                )
+            )
+
+    if grade is None or not grade[1]:
+        errors.append(
+            _err(
+                rel,
+                grade[0] if grade else history_lineno,
+                "missing-field",
+                "Grade is required when grade history exists",
+            )
+        )
+    elif final_to is not None and grade[1] in GRADES and grade[1] != final_to:
+        errors.append(
+            _err(
+                rel,
+                grade[0],
+                "invalid-invariant",
+                f"Grade `{grade[1]}` must equal the final history To `{final_to}`",
+            )
+        )
+
+
 def validate_evidence_record(
     path: Path, rel: str, record_id: str, id_lineno: int, br_ids: dict[str, int],
     errors: list[str],
@@ -1196,7 +1391,7 @@ def validate_evidence_record(
             )
         )
     lines = list(_visible_lines(path.read_text(encoding="utf-8")))
-    header, _sections = _split_sections(lines)
+    header, sections = _split_sections(lines)
     seen, duplicates = _unique_fields(_parse_kv(header))
     for lineno, key in duplicates:
         errors.append(
@@ -1222,6 +1417,17 @@ def validate_evidence_record(
         ref = seen.get(key)
         if ref and ref[1]:
             _check_br_reference(rel, ref[0], ref[1], br_ids, errors)
+
+    history_lineno = next(
+        (
+            lineno
+            for lineno, line in lines
+            if (match := HEADING2_RE.match(line))
+            and match.group(1).strip().lower() == "grade history"
+        ),
+        id_lineno,
+    )
+    _validate_grade_history(rel, sections, grade, history_lineno, errors)
 
 
 def validate_characterization_record(

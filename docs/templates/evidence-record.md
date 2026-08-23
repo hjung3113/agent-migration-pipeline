@@ -8,6 +8,14 @@
 - Captured date:
 - Source type: automated-test | runtime | db | log | callback | source | manual | other
 
+## Grade history
+
+Append the initial grade and each later grade change as a new row. Do not delete, reorder, or rewrite prior decisions.
+
+| Recorded date | From | To | Reason | Evidence refs |
+| --- | --- | --- | --- | --- |
+| YYYY-MM-DD | — | B | Initial grade from direct runtime observation | path/or/stable-ref |
+
 ## Evidence
 
 Record the raw artifact, source location, capture reference, or approved external evidence location.

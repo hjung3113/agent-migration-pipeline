@@ -36,11 +36,13 @@ Worked example: a runtime capture already confirms an existing rule — use this
 - [Input] `migration/features/<feature-id>/feature-card.md` and the relevant contract when feature context is required.
 - [Input] `migration/evidence/<evidence-id>.md` for project-wide/reusable evidence when the scope is project-wide.
 - [Input] The current grade, provenance, contradiction history, and any applicable grade-transition decision from `docs/09-evidence-grade-transition-control.md`.
+- [Input] Read the complete `## Grade history` table before deciding whether the current grade changes.
 
 ## Outputs
 
 - [Output] A feature-scoped evidence record at `migration/features/<feature-id>/evidence/<evidence-id>.md`, or a project-scoped record at `migration/evidence/<evidence-id>.md`.
 - [Output] The A/B/C/D/? grade and supporting evidence reference attached to the existing claim.
+- [Output] Preserve the existing `## Grade history` and append one row only for an actual grade transition.
 - For a read-only invoking role, return the complete evidence-record body and canonical destination to `migration-coordinator`; direct persistence is allowed only when the role-boundary contract grants it.
 - This skill never updates `migration/STATE.md`, `migration/QUEUE.md`, feature lifecycle metadata, or the behavior contract's ownership decision.
 
@@ -52,6 +54,19 @@ Worked example: a runtime capture already confirms an existing rule — use this
 4. [Output] Record the observation, optional inference, provenance, grade, contradiction status, reproducible evidence reference, and persistence destination in the appropriate evidence record.
 5. [Input] Check that production data handling, unresolved questions, and record references do not pretend to answer an unknown.
 6. [Output] Return the grade, complete record body or authorized write result, canonical destination, and any `PARTIAL`/`BLOCKED` condition to `migration-coordinator`.
+
+Read the complete `## Grade history` before applying a transition, and append a new row only when the grade changes.
+
+## Grade-change procedure
+
+1. Identify the claim/scenario and locate its existing evidence record before assigning a grade. If the same claim already has a record, update that record rather than creating a replacement that loses history.
+2. Read the current `Grade:`, the complete grade history, current evidence references, and `Limitations / uncertainty` including contradictions.
+3. Add or reference the new evidence, contradiction, or invalidation first. Do not choose the desired target grade before evaluating the evidence.
+4. Re-evaluate the highest grade actually justified by the canonical grade definitions. Unresolved contradictory evidence blocks promotion.
+5. If the justified grade is unchanged, keep `Grade:` unchanged and do not append a synthetic transition row. Update evidence/limitations as needed.
+6. If the grade changes, append one history row. Promotion requires newly introduced evidence; a promotion must cite at least one newly introduced supporting evidence reference, and a downgrade must cite the reason support was weakened or invalidated.
+7. Update the top-level `Grade:` in the same repository change and verify it equals the last history row's `To`.
+8. Never delete or rewrite past grade decisions; if later evidence reverses a decision, record the reversal as another transition.
 
 ## Branches
 

@@ -876,6 +876,14 @@ JUDGE_SELF_CHECK_COLUMNS = (
     "Actual detector result(s)",
     "Outcome",
 )
+REUSED_SELF_CHECK_EMPTY_SENTINELS = frozenset({"n/a", "none", "tbd", "-"})
+JUDGE_SELF_CHECK_REQUIRED_ROW_FIELDS = (
+    "Control ID",
+    "Baseline",
+    "Known-wrong mutation",
+    "Expected detector(s)",
+    "Actual detector result(s)",
+)
 OQ_STATUSES = ("OPEN", "CONFIRMED", "NOT-APPLICABLE", "DEFERRED")
 OQ_REGISTRY_PATH = "docs/05-open-questions.md"
 EVIDENCE_H1_RE = re.compile(r"^Evidence:\s*(.*)$")
@@ -1301,8 +1309,11 @@ def validate_verification(path: Path, rel: str, errors: list[str]) -> None:
             )
         )
     reused_ref = self_check_fields.get("Reused self-check evidence ref")
+    reused_ref_value = reused_ref[1].strip().casefold() if reused_ref else ""
     if mode_value == "reused" and (
-        reused_ref is None or not reused_ref[1] or reused_ref[1] == "N/A"
+        reused_ref is None
+        or not reused_ref[1]
+        or reused_ref_value in REUSED_SELF_CHECK_EMPTY_SENTINELS
     ):
         errors.append(
             _err(
@@ -1356,6 +1367,16 @@ def validate_verification(path: Path, rel: str, errors: list[str]) -> None:
         )
 
     for headers, row_lineno, cells in control_rows:
+        for field in JUDGE_SELF_CHECK_REQUIRED_ROW_FIELDS:
+            if not (_cell(headers, cells, field) or "").strip():
+                errors.append(
+                    _err(
+                        rel,
+                        row_lineno,
+                        "missing-field",
+                        f"Judge self-check control row must contain a non-empty `{field}` cell",
+                    )
+                )
         outcome = _cell(headers, cells, "Outcome") or ""
         if outcome not in JUDGE_SELF_CHECK_RESULTS:
             errors.append(

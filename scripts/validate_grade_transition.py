@@ -45,6 +45,7 @@ except ModuleNotFoundError:  # direct ``python3 scripts/validate_grade_transitio
 
 GRADE_ORDER = {grade: index for index, grade in enumerate(("?", "D", "C", "B", "A"))}
 REF_TOKEN_SPLIT_RE = re.compile(r"[\s,;]+")
+MARKDOWN_LINK_RE = re.compile(r"^\[[^\]]*\]\(([^)]*)\)$")
 
 
 @dataclass(frozen=True)
@@ -340,8 +341,26 @@ def _parse_record(path: str, text: str, *, require_history: bool) -> EvidenceRec
     return EvidenceRecord(record_id, grade, grade_lineno, history, tuple(errors))
 
 
+def _canonical_ref_token(raw: str) -> str:
+    """Canonicalize one raw evidence-ref token to its comparison identity.
+
+    A Markdown link's target locator is what actually identifies the
+    evidence; the display label is cosmetic and must not defeat the
+    new-evidence check (e.g. relabeling `[old](capture/x.log)` to
+    `[new](capture/x.log)` cites the same evidence, not new evidence).
+    """
+    link_match = MARKDOWN_LINK_RE.match(raw)
+    if link_match:
+        return link_match.group(1).strip()
+    return raw.strip("`<>[]()")
+
+
 def _evidence_ref_tokens(value: str) -> list[str]:
-    return [token.strip("`<>[]()") for token in REF_TOKEN_SPLIT_RE.split(value) if token]
+    return [
+        _canonical_ref_token(token)
+        for token in REF_TOKEN_SPLIT_RE.split(value)
+        if token
+    ]
 
 
 def _row_values(row: GradeRow) -> tuple[str, str, str, str, str]:
@@ -424,6 +443,11 @@ def _check_existing_transition(
         return errors
 
     previous_grade = base_record.grade
+    # Evidence already "spent" as of the immediately preceding grade decision —
+    # starts at the base revision's full text and grows with each appended
+    # row's own evidence refs, so a later promotion in the same candidate
+    # cannot reuse a ref an earlier appended row already introduced.
+    known_evidence_text = base_text
     for row in appended:
         if row.from_grade != previous_grade:
             errors.append(
@@ -448,7 +472,7 @@ def _check_existing_transition(
                 new_refs = [
                     token
                     for token in _evidence_ref_tokens(row.evidence_refs)
-                    if token and token not in base_text
+                    if token and token not in known_evidence_text
                 ]
                 if not new_refs:
                     errors.append(
@@ -457,11 +481,12 @@ def _check_existing_transition(
                             row.lineno,
                             "missing-evidence",
                             "promotion requires at least one new evidence reference "
-                            "not present in the base revision",
+                            "not present in the prior grade decision",
                         )
                     )
         if row.to_grade in GRADES:
             previous_grade = row.to_grade
+        known_evidence_text += "\n" + row.evidence_refs
 
     return errors
 

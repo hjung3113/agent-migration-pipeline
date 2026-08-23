@@ -278,6 +278,77 @@ def test_existing_record_deletion_fails(tmp_path: Path) -> None:
     assert "deleted" in proc.stderr
 
 
+def test_relabeled_markdown_link_is_not_new_evidence(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    commit_record(
+        repo,
+        record(
+            "C",
+            ("2026-08-23", "—", "C", "Initial grade", "[old](capture/same.log)"),
+        ),
+        "base",
+    )
+    write_record(
+        repo,
+        record(
+            "B",
+            ("2026-08-23", "—", "C", "Initial grade", "[old](capture/same.log)"),
+            (
+                "2026-08-24",
+                "C",
+                "B",
+                "Relabeled link, same target",
+                "[new](capture/same.log)",
+            ),
+        ),
+    )
+
+    proc = run_checker(repo, "evidence.md")
+
+    assert proc.returncode != 0
+    assert "missing-evidence" in proc.stderr
+
+
+def test_same_new_evidence_cannot_be_reused_across_consecutive_promotions(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    commit_record(
+        repo,
+        record(
+            "C",
+            ("2026-08-23", "—", "C", "Initial grade", "capture/base.log"),
+        ),
+        "base",
+    )
+    write_record(
+        repo,
+        record(
+            "A",
+            ("2026-08-23", "—", "C", "Initial grade", "capture/base.log"),
+            (
+                "2026-08-24",
+                "C",
+                "B",
+                "First promotion",
+                "capture/new-runtime.log",
+            ),
+            (
+                "2026-08-25",
+                "B",
+                "A",
+                "Second promotion reuses the same new ref",
+                "capture/new-runtime.log",
+            ),
+        ),
+    )
+
+    proc = run_checker(repo, "evidence.md")
+
+    assert proc.returncode != 0
+    assert "missing-evidence" in proc.stderr
+
+
 def test_absolute_file_diagnostic_is_repository_relative(tmp_path: Path) -> None:
     repo = make_repo(tmp_path)
     commit_record(repo, base_b_record(), "base")

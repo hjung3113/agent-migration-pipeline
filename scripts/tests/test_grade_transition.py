@@ -276,3 +276,22 @@ def test_existing_record_deletion_fails(tmp_path: Path) -> None:
 
     assert proc.returncode != 0
     assert "deleted" in proc.stderr
+
+
+def test_absolute_file_diagnostic_is_repository_relative(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    commit_record(repo, base_b_record(), "base")
+    write_record(
+        repo,
+        record(
+            "B",
+            ("2026-08-23", "—", "B", "Initial grade", "capture/base-runtime.log"),
+            ("2026-08-24", "B", "B", "No grade change", "capture/new-note"),
+        ),
+    )
+
+    proc = run_checker(repo, str(repo / "evidence.md"))
+
+    assert proc.returncode != 0
+    assert proc.stderr.startswith("evidence.md:")
+    assert str(repo) not in proc.stderr

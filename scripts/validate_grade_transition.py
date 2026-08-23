@@ -492,6 +492,11 @@ def _git_path(path_arg: str, repo: Path) -> tuple[str | None, str | None]:
     return relative.as_posix(), None
 
 
+def _display_path(path_arg: str, repo: Path) -> str:
+    relative, _error = _git_path(path_arg, repo)
+    return relative or Path(path_arg).as_posix()
+
+
 def _revision_file(repo: Path, ref: str, path: str) -> tuple[str | None, bool, str | None]:
     exists = _git(repo, "cat-file", "-e", f"{ref}:{path}")
     if exists.returncode != 0:
@@ -508,8 +513,8 @@ def _validate_ref(repo: Path, ref: str) -> str | None:
 
 
 def _check_file(repo: Path, base_ref: str, head_ref: str | None, path_arg: str) -> list[str]:
-    display_path = Path(path_arg).as_posix()
     git_path, path_error = _git_path(path_arg, repo)
+    display_path = git_path or Path(path_arg).as_posix()
     if path_error or git_path is None:
         return [_record_error(display_path, 1, "invalid-path", path_error or "invalid file path")]
 
@@ -604,13 +609,19 @@ def main(argv: list[str] | None = None) -> int:
     base_error = _validate_ref(repo, args.base)
     if base_error:
         for path in args.files:
-            print(_record_error(Path(path).as_posix(), 1, "git", base_error), file=sys.stderr)
+            print(
+                _record_error(_display_path(path, repo), 1, "git", base_error),
+                file=sys.stderr,
+            )
         return 1
     if args.head:
         head_error = _validate_ref(repo, args.head)
         if head_error:
             for path in args.files:
-                print(_record_error(Path(path).as_posix(), 1, "git", head_error), file=sys.stderr)
+                print(
+                    _record_error(_display_path(path, repo), 1, "git", head_error),
+                    file=sys.stderr,
+                )
             return 1
 
     errors: list[str] = []

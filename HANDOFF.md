@@ -5,7 +5,7 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-23
 
-## Next session: Issue #9 done, merged; continue Track P at #11
+## Next session: Issue #9 + followup done, merged; continue Track P at #11
 
 Issue #9 (evidence-grade transition control) is implemented, reviewed, and merged to `main`
 (PR #65, squash-merged as `d6ad610`), against the merged canonical design
@@ -63,6 +63,50 @@ Issue #6:
      meaning of a past decision", implying pure typo fixes should be allowed). Safety-first
      simplification, not treated as blocking.
 4. **Merge** — squash-merged as `d6ad610` after the review comment was posted to PR #65.
+
+**Post-merge followup (PR #66, squash-merged as `4771dbc`)**: per updated process, the
+independent review's two non-blocking findings were *not* auto-merged this time — the user
+explicitly changed the workflow (see below) and separately posted their own post-merge review
+on PR #65 finding two real **blocking** P1 defects in `scripts/validate_grade_transition.py`'s
+promotion new-evidence check (not the two non-blocking findings from the T-R1 review; those
+two are still open/unfixed, tracked below):
+
+- **P1 — Markdown link label change bypassed new-evidence detection.**
+  `_evidence_ref_tokens()` didn't canonicalize a Markdown link's target locator, so relabeling
+  `[old](capture/x.log)` -> `[new](capture/x.log)` looked like new evidence despite citing the
+  identical target — directly undermines the anti-silent-upgrade purpose of Layer 3. Fixed by
+  extracting Markdown links from the raw `Evidence refs` cell via a non-anchored regex *before*
+  delimiter-splitting (a first-pass fix that only anchored the regex to a single already-split
+  token still missed multi-word link labels — e.g. `[old label](capture/x.log)` — because the
+  label's internal space fragmented the token before the link pattern could match; both GitHub
+  owner review and Codex's automated inline review caught this on the first followup commit,
+  fixed in a second commit same PR).
+- **P1 — same new evidence reusable across consecutive promotions in one candidate diff.**
+  Promotion refs were checked only against the base revision's original file text, not against
+  evidence already introduced by an earlier appended row in the same diff, so `C -> B -> A`
+  could cite the identical brand-new ref in both promotion rows and both would pass. Fixed:
+  `_check_existing_transition()` now accumulates each appended row's evidence-refs text into a
+  running `known_evidence_text` blob (seeded from `base_text`) that later rows are checked
+  against.
+- 3 new regression tests added (`test_relabeled_markdown_link_is_not_new_evidence`,
+  `test_relabeled_multiword_markdown_link_label_is_not_new_evidence`,
+  `test_same_new_evidence_cannot_be_reused_across_consecutive_promotions`). Final state:
+  `validate_scaffold.py` exit 0, `pytest scripts/tests/ -q` 373 passed (370 post-#65 + 3),
+  doc-links/OQ green.
+
+**Workflow change for this repo, effective this session**: do not auto-merge a Track P/D PR
+after a clean independent review. Open the PR, post the review as a PR comment, then wait —
+merge only on the user's explicit instruction. (Saved as a standing memory:
+`feedback_no_auto_merge`.) This does not roll back the standing Track P/D rule-13
+*implementation* authorization from AGENTS.md — it only changes who pulls the merge trigger.
+
+The T-R1 review's two non-blocking findings from the original PR #65 review are still **not**
+fixed (deliberately, per that review's own recommendation to treat them as follow-up, not
+blockers) — leaving them here as a known-gap pointer for whoever picks up Track P/D work with
+spare scope: (1) `validate_grade_transition.py`'s `_parse_history()` duplicates
+`validate_scaffold.py`'s `_validate_grade_history()` instead of importing it; (2) the
+append-only history check is byte-for-byte, stricter than the design's stated allowance for
+historical typo/format cleanup.
 
 Track P merge order per plan: `#9 -> #11`. #11 shares `parity-verification`/verifier files
 with #6 (not with #9's files), so it is unaffected by this session's file set. Before starting

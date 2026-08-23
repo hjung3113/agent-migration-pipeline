@@ -309,6 +309,51 @@ def test_relabeled_markdown_link_is_not_new_evidence(tmp_path: Path) -> None:
     assert "missing-evidence" in proc.stderr
 
 
+def test_relabeled_multiword_markdown_link_label_is_not_new_evidence(
+    tmp_path: Path,
+) -> None:
+    repo = make_repo(tmp_path)
+    commit_record(
+        repo,
+        record(
+            "C",
+            (
+                "2026-08-23",
+                "—",
+                "C",
+                "Initial grade",
+                "[old label](capture/same.log)",
+            ),
+        ),
+        "base",
+    )
+    write_record(
+        repo,
+        record(
+            "B",
+            (
+                "2026-08-23",
+                "—",
+                "C",
+                "Initial grade",
+                "[old label](capture/same.log)",
+            ),
+            (
+                "2026-08-24",
+                "C",
+                "B",
+                "Relabeled link, same target",
+                "[new label](capture/same.log)",
+            ),
+        ),
+    )
+
+    proc = run_checker(repo, "evidence.md")
+
+    assert proc.returncode != 0
+    assert "missing-evidence" in proc.stderr
+
+
 def test_same_new_evidence_cannot_be_reused_across_consecutive_promotions(
     tmp_path: Path,
 ) -> None:

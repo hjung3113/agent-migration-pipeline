@@ -45,7 +45,10 @@ except ModuleNotFoundError:  # direct ``python3 scripts/validate_grade_transitio
 
 GRADE_ORDER = {grade: index for index, grade in enumerate(("?", "D", "C", "B", "A"))}
 REF_TOKEN_SPLIT_RE = re.compile(r"[\s,;]+")
-MARKDOWN_LINK_RE = re.compile(r"^\[[^\]]*\]\(([^)]*)\)$")
+# Not anchored: a Markdown link label may itself contain spaces (e.g.
+# "[old capture](path)"), so links must be pulled out of the raw text
+# *before* delimiter-splitting, not matched against already-split tokens.
+MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]*)\)")
 
 
 @dataclass(frozen=True)
@@ -341,26 +344,26 @@ def _parse_record(path: str, text: str, *, require_history: bool) -> EvidenceRec
     return EvidenceRecord(record_id, grade, grade_lineno, history, tuple(errors))
 
 
-def _canonical_ref_token(raw: str) -> str:
-    """Canonicalize one raw evidence-ref token to its comparison identity.
+def _evidence_ref_tokens(value: str) -> list[str]:
+    """Split an `Evidence refs` cell into comparison-identity tokens.
 
     A Markdown link's target locator is what actually identifies the
     evidence; the display label is cosmetic and must not defeat the
-    new-evidence check (e.g. relabeling `[old](capture/x.log)` to
-    `[new](capture/x.log)` cites the same evidence, not new evidence).
+    new-evidence check (e.g. relabeling `[old capture](capture/x.log)` to
+    `[new capture](capture/x.log)` cites the same evidence, not new
+    evidence). Links are extracted from the raw text first — their label
+    may contain the delimiter whitespace/commas that would otherwise
+    fragment the link before it could be matched — and only the
+    non-link remainder is delimiter-split into plain ref tokens.
     """
-    link_match = MARKDOWN_LINK_RE.match(raw)
-    if link_match:
-        return link_match.group(1).strip()
-    return raw.strip("`<>[]()")
-
-
-def _evidence_ref_tokens(value: str) -> list[str]:
-    return [
-        _canonical_ref_token(token)
-        for token in REF_TOKEN_SPLIT_RE.split(value)
+    tokens: list[str] = [match.group(1).strip() for match in MARKDOWN_LINK_RE.finditer(value)]
+    remainder = MARKDOWN_LINK_RE.sub(" ", value)
+    tokens.extend(
+        token.strip("`<>[]()")
+        for token in REF_TOKEN_SPLIT_RE.split(remainder)
         if token
-    ]
+    )
+    return [token for token in tokens if token]
 
 
 def _row_values(row: GradeRow) -> tuple[str, str, str, str, str]:

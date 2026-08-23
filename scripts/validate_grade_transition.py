@@ -45,6 +45,10 @@ except ModuleNotFoundError:  # direct ``python3 scripts/validate_grade_transitio
 
 GRADE_ORDER = {grade: index for index, grade in enumerate(("?", "D", "C", "B", "A"))}
 REF_TOKEN_SPLIT_RE = re.compile(r"[\s,;]+")
+# Not anchored: a Markdown link label may itself contain spaces (e.g.
+# "[old capture](path)"), so links must be pulled out of the raw text
+# *before* delimiter-splitting, not matched against already-split tokens.
+MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]*)\)")
 
 
 @dataclass(frozen=True)
@@ -341,7 +345,25 @@ def _parse_record(path: str, text: str, *, require_history: bool) -> EvidenceRec
 
 
 def _evidence_ref_tokens(value: str) -> list[str]:
-    return [token.strip("`<>[]()") for token in REF_TOKEN_SPLIT_RE.split(value) if token]
+    """Split an `Evidence refs` cell into comparison-identity tokens.
+
+    A Markdown link's target locator is what actually identifies the
+    evidence; the display label is cosmetic and must not defeat the
+    new-evidence check (e.g. relabeling `[old capture](capture/x.log)` to
+    `[new capture](capture/x.log)` cites the same evidence, not new
+    evidence). Links are extracted from the raw text first — their label
+    may contain the delimiter whitespace/commas that would otherwise
+    fragment the link before it could be matched — and only the
+    non-link remainder is delimiter-split into plain ref tokens.
+    """
+    tokens: list[str] = [match.group(1).strip() for match in MARKDOWN_LINK_RE.finditer(value)]
+    remainder = MARKDOWN_LINK_RE.sub(" ", value)
+    tokens.extend(
+        token.strip("`<>[]()")
+        for token in REF_TOKEN_SPLIT_RE.split(remainder)
+        if token
+    )
+    return [token for token in tokens if token]
 
 
 def _row_values(row: GradeRow) -> tuple[str, str, str, str, str]:
@@ -424,6 +446,11 @@ def _check_existing_transition(
         return errors
 
     previous_grade = base_record.grade
+    # Evidence already "spent" as of the immediately preceding grade decision —
+    # starts at the base revision's full text and grows with each appended
+    # row's own evidence refs, so a later promotion in the same candidate
+    # cannot reuse a ref an earlier appended row already introduced.
+    known_evidence_text = base_text
     for row in appended:
         if row.from_grade != previous_grade:
             errors.append(
@@ -448,7 +475,7 @@ def _check_existing_transition(
                 new_refs = [
                     token
                     for token in _evidence_ref_tokens(row.evidence_refs)
-                    if token and token not in base_text
+                    if token and token not in known_evidence_text
                 ]
                 if not new_refs:
                     errors.append(
@@ -457,11 +484,12 @@ def _check_existing_transition(
                             row.lineno,
                             "missing-evidence",
                             "promotion requires at least one new evidence reference "
-                            "not present in the base revision",
+                            "not present in the prior grade decision",
                         )
                     )
         if row.to_grade in GRADES:
             previous_grade = row.to_grade
+        known_evidence_text += "\n" + row.evidence_refs
 
     return errors
 

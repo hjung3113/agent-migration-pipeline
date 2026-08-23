@@ -3,9 +3,81 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-23
+Last updated: 2026-08-24
 
-## Next session: Issue #9 + followup done, merged; continue Track P at #11
+## Next session: Issue #11 implemented + reviewed; PR #67 open, awaiting explicit merge instruction
+
+Issue #11 (judge self-check hardening — mandatory negative control, no `where practical`
+waiver) is implemented against the already-merged canonical design
+(`docs/03-evidence-and-verification.md` §"Judge self-check gate", `migration/RULEBOOK.md:96`,
+`docs/templates/verification.md`). Track P's final item. Built with the same three-stage
+pipeline as #6/#9:
+
+1. **Gate check + execution plan** — opencode (GLM-5.3, Build auto) re-ran the
+   ISSUES-PLAN-DRAFT 7-item gate for #11 against current `main` (all 7 passed, no blockers)
+   and wrote `migration/ISSUE-11-EXECUTION-PLAN.md` — confirmed the canonical policy docs
+   were already merged and unambiguous, so #11's remaining scope was narrowly: (T-1)
+   remove the leftover `where practical` hedge from `.opencode/skills/parity-verification/
+   SKILL.md` (judge rule 7, actual line 93 — the issue body's cited line numbers had
+   drifted) and `.opencode/agents/verifier.md` (procedure step 3, line 42), same-slot only;
+   (T-2) extend `validate_verification()` in `scripts/validate_scaffold.py` to mechanically
+   enforce the template's own already-stated invariants (mandatory `Judge self-check`
+   header/coupling, 6 required section fields, fixed 8-column control table, PASS-outcome
+   coupling) — previously entirely unenforced. 8 derived judgment calls (P-1..P-8) recorded
+   why each choice follows from already-merged policy rather than being a new decision (e.g.
+   P-7: no fingerprint-*format* invention, canonical docs only require identity, not
+   encoding). Committed as `529ea59` on branch `hjung3113/issue11-plan`.
+2. **Implementation** — codex (`gpt-5.6-luna`, `model_reasoning_effort=max`) executed the
+   plan verbatim in the same worktree/branch, opened PR #67. T-1 and T-2 done in parallel
+   (file-disjoint), then T-I1 integration verification. `python3 scripts/validate_scaffold.py`
+   exit 0, `pytest scripts/tests/ -q` 392 passed (373 baseline + 19 new), doc-links/OQ green,
+   canonical 3 docs + `migration/features/synthetic-demo/verification.md` byte-unchanged.
+3. **Independent adversarial review (T-R1)** — same two-phase pattern as #6/#9 (fresh
+   subagent, phase 1 sees only PR title/body and forms falsifiable hypotheses; phase 2 gets
+   diff/repo access, runs the validator/pytest itself, and verifies each hypothesis against
+   real code). **Verdict: REQUEST CHANGES** — T-1 (the skill/agent hedge removal) came back
+   byte-clean (diffstat: 3 changed lines total across both files, all prior references and
+   preserved rules intact), but T-2's new validator had 2 real blocking gaps, both classic
+   "checks the shape, not the substance" holes:
+   - **F1** — the `Self-check mode: reused` escape hatch's empty-sentinel guard was
+     case-sensitive and only rejected the exact string `N/A`, so `reused` + a reference of
+     `n/a`/`none`/`tbd`/`-` + zero control rows produced a clean `Result: PASS` with no
+     auditable control at all — directly violates `docs/03:145`/`:149`. Same defect *class*
+     as PR #66's grade-transition evidence-ref bypass (superficial text variation defeats a
+     bypass-detection regex), recurring one PR later in the sibling check.
+   - **F2** — the control-table row check (V5) validated only the `Outcome` cell; a row with
+     every other cell blank and `Outcome: PASS` passed, so the plan's own P-6 derivation
+     (record-obligation from `docs/03:133`/`:149`) was not actually implemented, only its
+     column headers were.
+   - Also flagged non-blocking: F3 (no-op mutation — identical Baseline/Known-wrong-mutation
+     text — not detected; left as reviewer's discretion, a runtime-materiality judgment call
+     the plan correctly leaves to review), F4 (the shipped tests didn't cover several new
+     branches and one existing test actively asserted the F1 hole was correct behavior), F5
+     (the new content-contract test checks required substrings are present, not that
+     preserved neighbor text like the PostgreSQL guard rules 4-5 survives — didn't bite this
+     round since T-1 was clean, but is a residual gap in the *test*, not the shipped diff),
+     F6 (a wording drift — "record ... in `docs/templates/verification.md`" should say
+     "using" the template, not writing into the protected template file itself).
+4. **Fix + re-verify** — codex fixed F1 (case-insensitive sentinel check covering the
+   `n/a|none|tbd|-` family), F2 (required non-empty `Control ID`/`Baseline`/`Known-wrong
+   mutation`/`Expected detector(s)`/`Actual detector result(s)` cells per row), F4 (replaced
+   the test that asserted the F1 hole was fine; added negative coverage for both fixes plus
+   the untested branches), and F6 (wording fix in both `SKILL.md` occurrences) in commit
+   `a7bc385`. F3/F5/N1-N4 left as-is per review's own "reviewer's discretion" framing — not
+   fixed, not forgotten. Re-verification: `validate_scaffold.py` exit 0, `pytest
+   scripts/tests/ -q` 401 passed (392 + 9 new), doc-links/OQ green, canonical docs still
+   byte-unchanged. Full review posted as a PR comment on #67.
+
+**PR #67 is open, not merged.** Per the 2026-08-22 workflow change (`feedback_no_auto_merge`
+standing memory): open PR + post review, wait for the user's explicit merge instruction.
+This is the last item in Track P per the plan (`... -> #6 -> #9 -> #11`) — **after #67
+merges, Track P is complete.** Track D (`#23 -> #20 -> (#18, #22 core) -> #22 live adapter
+-> #21 deferred`) remains separately gated and untouched. Note per
+`migration/ISSUE-11-EXECUTION-PLAN.md` §6: the DB-source-inclusive judge configuration's
+negative control is explicitly out of #11's completion criteria — that combination is
+covered only after #22's live adapter lands (`ISSUES-PLAN-DRAFT.md:76`).
+
+## Historical: Issue #9 + followup done, merged; continue Track P at #11
 
 Issue #9 (evidence-grade transition control) is implemented, reviewed, and merged to `main`
 (PR #65, squash-merged as `d6ad610`), against the merged canonical design

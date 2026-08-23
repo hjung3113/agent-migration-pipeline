@@ -3,9 +3,79 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-22
+Last updated: 2026-08-23
 
-## Next session: Issue #6 done, merged; continue Track P at #9 -> #11
+## Next session: Issue #9 done, merged; continue Track P at #11
+
+Issue #9 (evidence-grade transition control) is implemented, reviewed, and merged to `main`
+(PR #65, squash-merged as `d6ad610`), against the merged canonical design
+`docs/09-evidence-grade-transition-control.md`. Built with the same three-stage pipeline as
+Issue #6:
+
+1. **Gate check + execution plan** — opencode (`zai-coding-plan/glm-5.3`, `--variant high`,
+   `--auto`) re-ran the ISSUES-PLAN-DRAFT "구현 시작 전 체크" 7-item gate for #9 against
+   current `main` (all 7 passed, no blockers) and wrote `migration/ISSUE-9-EXECUTION-PLAN.md`
+   — a DAG (T-L1/T-L2/T-L3 file-disjoint layers, then T-I1 integration, T-R1 review, T-H1
+   handoff) plus 8 derived judgment calls (P-1..P-8, e.g. Layer 1 extends
+   `validate_evidence_record()` in place rather than adding a sibling function; Layer 3 is a
+   standalone script requiring an explicit `--base <ref>` with no default, never wired into
+   `collect_validation_errors()`/CI). Committed as `fae875d` on branch
+   `hjung3113/issue9-plan`.
+2. **Implementation** — codex (`gpt-5.6-luna`, `model_reasoning_effort=max`, repo default)
+   executed that plan verbatim in the same worktree/branch:
+   - **Layer 1 (schema)**: `docs/templates/evidence-record.md` gained a `## Grade history`
+     section (fixed columns `Recorded date | From | To | Reason | Evidence refs`);
+     `validate_evidence_record()` in `scripts/validate_scaffold.py` gained a
+     `_validate_grade_history()` helper enforcing history presence, initial `From = —`
+     (em-dash sentinel, distinct from grade `?`), row-to-row continuity, `Grade:` == final
+     row `To`, enum values, non-empty reasons, evidence-refs presence rules.
+   - **Layer 2 (agent procedure)**: `.opencode/skills/evidence-grading/SKILL.md` gained a new
+     `## Grade-change procedure` H2 with the design's 8-step compare-before-change procedure;
+     the existing 5-section (#6) and routing (#7) structure was preserved untouched — purely
+     additive diff, confirmed line-by-line against `main`.
+   - **Layer 3 (revision-aware transition check)**: new standalone
+     `scripts/validate_grade_transition.py`, deliberately not wired into
+     `collect_validation_errors()`/`main()`/CI. Requires explicit `--base <ref>` (no default,
+     hard CLI error if omitted), repeatable `--file <path>`, optional `--head <ref>`. Detects
+     promotion/downgrade via `? < D < C < B < A`, requires a promotion's evidence ref be a
+     token absent from the base revision's file text, enforces append-only history prefix,
+     flags same-path record deletion between revisions, and handles the legacy-adoption
+     baseline row when the base revision predates this control.
+   - New tests: `scripts/tests/test_grade_history.py`, `scripts/tests/test_grade_transition.py`,
+     plus additions to `test_validate_schema.py` and `test_skill_execution_contract.py` (29
+     new tests total). Opened PR #65.
+3. **Independent adversarial review (T-R1)** — same two-phase pattern as #6 (fresh subagent,
+   phase 1 sees only PR title/body and forms 20 falsifiable hypotheses from the design doc +
+   this repo's F1/F2 failure-pattern history; phase 2 gets the diff/repo and verifies each
+   against real code/tests). **Verdict: APPROVE — all 20 hypotheses refuted**, no defects of
+   the class Issue #6 found (silent conditional/reference drops during a batch rewrite).
+   Confirmed live (not from PR-body claims): `validate_scaffold.py` exit 0, `pytest
+   scripts/tests/ -q` 370 passed (341 main + 29 new, arithmetic verified), `check_doc_links.py`
+   / `check_oq_updates.py` green.
+   - Two non-blocking findings recorded on the PR as known limitations rather than fixed:
+     **(1)** `validate_grade_transition.py`'s `_parse_history()` (~200 lines) duplicates
+     `validate_scaffold.py`'s `_validate_grade_history()` (~187 lines) instead of importing it
+     — both correct today, but nothing enforces the two stay in sync if one is edited later;
+     a real follow-up candidate is having Layer 3 import Layer 1's helper directly.
+     **(2)** the append-only history check compares historical rows byte-for-byte, so even a
+     harmless typo fix to a past row's `Reason` fails `[append-only]` — stricter than the
+     design's literal text ("historical typo/format cleanup may not change the semantic
+     meaning of a past decision", implying pure typo fixes should be allowed). Safety-first
+     simplification, not treated as blocking.
+4. **Merge** — squash-merged as `d6ad610` after the review comment was posted to PR #65.
+
+Track P merge order per plan: `#9 -> #11`. #11 shares `parity-verification`/verifier files
+with #6 (not with #9's files), so it is unaffected by this session's file set. Before starting
+#11, redo the 7-item gate against current `main`, and re-read `.opencode/skills/
+parity-verification/SKILL.md`, the verifier agent, and `docs/03-evidence-and-verification.md`
+/`migration/RULEBOOK.md:96`/`docs/templates/verification.md` as they now stand (all already
+canonical per the design; #11's remaining scope is narrowly the leftover `"where practical"`
+string in `parity-verification/SKILL.md:30` plus verifier-agent/regression-test work — see
+`ISSUES-PLAN-DRAFT.md`'s P-R lane note). Rule-13 Track P/D authorization remains in effect and
+has not been revoked. After #11, Track P is complete per the current plan; Track D (`#23 ->
+#20 -> ...`) remains separately gated and untouched this session.
+
+## Historical: Issue #6 done, merged; continue Track P at #9 -> #11
 
 Issue #6 (skill execution contract) is implemented, reviewed, and merged to
 `main` (PR #64, squash-merged as `5ef270d`), against the merged canonical

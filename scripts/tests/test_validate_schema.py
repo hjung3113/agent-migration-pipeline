@@ -302,14 +302,28 @@ EVIDENCE_TMPL = """# Evidence: ev-001
 - Grade: {grade}
 - Captured date: 2026-08-19
 - Source type: {source}
+
+## Grade history
+
+| Recorded date | From | To | Reason | Evidence refs |
+| --- | --- | --- | --- | --- |
+| 2026-08-23 | — | {history_grade} | Initial grade from test fixture | fixture/evidence-001 |
 """
+
+
+def evidence_text(grade: str, source: str, *, history_grade: str | None = None) -> str:
+    return EVIDENCE_TMPL.format(
+        grade=grade,
+        source=source,
+        history_grade=grade if history_grade is None else history_grade,
+    )
 
 
 def test_valid_evidence_record_passes(tmp_path: Path) -> None:
     root = make_repo(tmp_path)
     add_feature(
         root,
-        extra_files={"evidence/ev-001.md": EVIDENCE_TMPL.format(grade="B", source="runtime")},
+        extra_files={"evidence/ev-001.md": evidence_text("B", "runtime")},
     )
     assert run_schema(root) == []
 
@@ -319,7 +333,7 @@ def test_evidence_grade_accepted(tmp_path: Path, grade: str) -> None:
     root = make_repo(tmp_path)
     add_feature(
         root,
-        extra_files={"evidence/ev-001.md": EVIDENCE_TMPL.format(grade=grade, source="db")},
+        extra_files={"evidence/ev-001.md": evidence_text(grade, "db")},
     )
     assert run_schema(root) == []
 
@@ -329,7 +343,9 @@ def test_evidence_grade_rejected(tmp_path: Path, grade: str) -> None:
     root = make_repo(tmp_path)
     add_feature(
         root,
-        extra_files={"evidence/ev-001.md": EVIDENCE_TMPL.format(grade=grade, source="db")},
+        extra_files={
+            "evidence/ev-001.md": evidence_text(grade, "db", history_grade="B")
+        },
     )
     errors = run_schema(root)
     assert errors == [
@@ -346,7 +362,7 @@ def test_evidence_source_type_domain_accepted(tmp_path: Path, source: str) -> No
     root = make_repo(tmp_path)
     add_feature(
         root,
-        extra_files={"evidence/ev-001.md": EVIDENCE_TMPL.format(grade="B", source=source)},
+        extra_files={"evidence/ev-001.md": evidence_text("B", source)},
     )
     assert run_schema(root) == []
 
@@ -356,7 +372,7 @@ def test_evidence_source_type_rejected(tmp_path: Path, source: str) -> None:
     root = make_repo(tmp_path)
     add_feature(
         root,
-        extra_files={"evidence/ev-001.md": EVIDENCE_TMPL.format(grade="B", source=source)},
+        extra_files={"evidence/ev-001.md": evidence_text("B", source)},
     )
     errors = run_schema(root)
     assert errors == [
@@ -366,7 +382,9 @@ def test_evidence_source_type_rejected(tmp_path: Path, source: str) -> None:
     ]
 
 
-def test_evidence_blank_wip_grade_and_source_are_not_violations(tmp_path: Path) -> None:
+def test_evidence_blank_wip_grade_and_source_require_grade_history(
+    tmp_path: Path,
+) -> None:
     record = (
         "# Evidence: ev-wip\n\n"
         "- Feature: alpha\n"
@@ -377,11 +395,19 @@ def test_evidence_blank_wip_grade_and_source_are_not_violations(tmp_path: Path) 
     )
     root = make_repo(tmp_path)
     add_feature(root, extra_files={"evidence/ev-wip.md": record})
-    assert run_schema(root) == []
+    assert any("[missing-history]" in error for error in run_schema(root))
 
 
 def test_evidence_empty_h1_id_rejected(tmp_path: Path) -> None:
-    record = "# Evidence:\n\n- Feature: alpha\n"
+    record = (
+        "# Evidence:\n\n"
+        "- Feature: alpha\n"
+        "- Grade: B\n"
+        "\n## Grade history\n\n"
+        "| Recorded date | From | To | Reason | Evidence refs |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 2026-08-23 | — | B | Initial grade | fixture/evidence-001 |\n"
+    )
     root = make_repo(tmp_path)
     add_feature(root, extra_files={"evidence/bad.md": record})
     errors = run_schema(root)
@@ -398,6 +424,10 @@ def test_evidence_structured_br_ref_must_resolve(tmp_path: Path) -> None:
         "- Behavior contract ref: {ref}\n"
         "- Grade: B\n"
         "- Source type: runtime\n"
+        "\n## Grade history\n\n"
+        "| Recorded date | From | To | Reason | Evidence refs |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 2026-08-23 | — | B | Initial grade | fixture/evidence-001 |\n"
     )
     root = make_repo(tmp_path)
     add_feature(root, extra_files={"evidence/ok.md": record.format(ref="BR-001")})
@@ -426,6 +456,10 @@ def test_evidence_free_form_rule_scenario_is_not_a_reference(tmp_path: Path) -> 
         "- Rule/scenario: something about BR-999 and OQ-999\n"
         "- Grade: B\n"
         "- Source type: manual\n"
+        "\n## Grade history\n\n"
+        "| Recorded date | From | To | Reason | Evidence refs |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 2026-08-23 | — | B | Initial grade | fixture/evidence-001 |\n"
     )
     root = make_repo(tmp_path)
     add_feature(root, extra_files={"evidence/ev-free.md": record})
@@ -439,6 +473,10 @@ def test_evidence_duplicate_header_key_rejected(tmp_path: Path) -> None:
         "- Grade: B\n"
         "- Grade: A\n"
         "- Source type: runtime\n"
+        "\n## Grade history\n\n"
+        "| Recorded date | From | To | Reason | Evidence refs |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| 2026-08-23 | — | B | Initial grade | fixture/evidence-001 |\n"
     )
     root = make_repo(tmp_path)
     add_feature(root, extra_files={"evidence/ev-dup.md": record})
@@ -934,7 +972,7 @@ def test_multiple_errors_aggregate_with_file_and_line(tmp_path: Path) -> None:
         contract_text=contract,
         verification_text=VALID_VERIFICATION.replace("- Result: PASS", "- Result: DONE"),
         extra_files={
-            "evidence/ev-bad.md": EVIDENCE_TMPL.format(grade="X", source="tests")
+            "evidence/ev-bad.md": evidence_text("X", "tests", history_grade="B")
         },
     )
     errors = run_schema(root)

@@ -5,7 +5,7 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-24
 
-## Next session: Issue #23 implemented — Track D continues at #20
+## Next session: Issue #23 implemented (PR #68 open) — Track D continues at #20
 
 Issue #23's committed execution plan (`ed850f1`) was executed on
 `hjung3113/issue23-plan`. The implementation is in `2e5db0f`; the owner-level
@@ -23,7 +23,7 @@ their future consumer wiring, target identity/SQL guards, and database behavior.
 Evidence at handoff: `python3 scripts/validate_scaffold.py` passed; `python3 -m pytest
 scripts/tests/ -q` passed 427 tests (404 baseline plus 23 parameterized cases); document
 link and OQ checks passed; `git check-ignore` returned 0 for `.env` and `.env.local` and
-1 for `.env.example`; `scripts/db/` has no driver/dotenv imports; the independent T-R1
+1 for `.env.example`; `scripts/db/` has no driver/dotenv imports; PR #68 is OPEN; the independent T-R1
 review found no standards findings and one duplicate-key validator gap, fixed in
 `a26f47e`, followed by a green owner second pass. Merge remains pending the user's
 explicit instruction after PR review.

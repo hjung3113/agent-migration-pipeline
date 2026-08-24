@@ -826,6 +826,112 @@ def validate_features(root: Path | None = None) -> list[str]:
     return errors
 
 
+def validate_env_example_contract(root: Path | None = None) -> list[str]:
+    """Validate the canonical empty .env.example and its ignore protection."""
+    base = ROOT if root is None else root
+    errors: list[str] = []
+
+    def report(path: str, line: int, message: str) -> None:
+        errors.append(f"{path}:{line} [env-example] {message}")
+
+    env_path = base / ENV_EXAMPLE_PATH
+    parsed: dict[str, list[tuple[int, str | None]]] = {}
+    if not env_path.is_file():
+        report(ENV_EXAMPLE_PATH, 1, "required file missing")
+    else:
+        for line_number, raw_line in enumerate(
+            env_path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if "=" in raw_line:
+                raw_key, rhs = raw_line.split("=", 1)
+                key = raw_key
+            else:
+                key = stripped
+                rhs = None
+            parsed.setdefault(key, []).append((line_number, rhs))
+
+        for key, occurrences in parsed.items():
+            if len(occurrences) > 1:
+                report(
+                    ENV_EXAMPLE_PATH,
+                    occurrences[1][0],
+                    f"duplicate key: {key}",
+                )
+
+        expected_keys = set(ENV_EXAMPLE_KEYS)
+        actual_keys = set(parsed)
+        for key in sorted(expected_keys - actual_keys):
+            report(ENV_EXAMPLE_PATH, 1, f"missing canonical key: {key}")
+        for key in sorted(actual_keys - expected_keys):
+            report(
+                ENV_EXAMPLE_PATH,
+                parsed[key][0][0],
+                f"unexpected key: {key}",
+            )
+        for key in ENV_EXAMPLE_KEYS:
+            if key not in parsed:
+                continue
+            for line_number, rhs in parsed[key]:
+                if rhs != "":
+                    report(
+                        ENV_EXAMPLE_PATH,
+                        line_number,
+                        f"{key} must have an empty value",
+                    )
+
+    gitignore_path = base / ".gitignore"
+    rule_lines = {rule: [] for rule in GITIGNORE_ENV_RULES}
+    if not gitignore_path.is_file():
+        report(".gitignore", 1, "required file missing")
+    else:
+        for line_number, raw_line in enumerate(
+            gitignore_path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            normalized = raw_line.strip()
+            if normalized in rule_lines:
+                rule_lines[normalized].append(line_number)
+
+        for rule in GITIGNORE_ENV_RULES:
+            if not rule_lines[rule]:
+                report(".gitignore", 1, f"required rule missing: {rule}")
+
+        wildcard_lines = rule_lines[".env.*"]
+        exception_lines = rule_lines["!.env.example"]
+        if wildcard_lines and exception_lines:
+            wildcard_line = wildcard_lines[-1]
+            exception_line = exception_lines[-1]
+            if exception_line <= wildcard_line:
+                report(
+                    ".gitignore",
+                    exception_line,
+                    "!.env.example must appear after .env.*",
+                )
+
+        canonical_rules_are_valid = (
+            all(rule_lines[rule] for rule in GITIGNORE_ENV_RULES)
+            and exception_lines[-1] > wildcard_lines[-1]
+        )
+        if canonical_rules_are_valid:
+            for line_number, raw_line in enumerate(
+                gitignore_path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                normalized = raw_line.strip()
+                if not normalized.startswith("!") or normalized == "!.env.example":
+                    continue
+                pattern = normalized[1:].lstrip("/")
+                if any(part.startswith(".env") for part in pattern.split("/")):
+                    report(
+                        ".gitignore",
+                        line_number,
+                        f"protection-defeating env negation rule: {normalized}",
+                    )
+
+    return errors
+
+
 # A-2 artifact schema/reference validation:
 # docs/issue-2-artifact-schema-validation.md. Closed value domains, ID
 # formats/scopes, and explicitly structured references only — no semantic
@@ -888,6 +994,13 @@ JUDGE_SELF_CHECK_REQUIRED_ROW_FIELDS = (
 )
 OQ_STATUSES = ("OPEN", "CONFIRMED", "NOT-APPLICABLE", "DEFERRED")
 OQ_REGISTRY_PATH = "docs/05-open-questions.md"
+ENV_EXAMPLE_PATH = ".env.example"
+ENV_EXAMPLE_KEYS = (
+    "MSSQL_PROD_RO_CONN",
+    "MSSQL_TEST_RW_CONN",
+    "PG_TEST_RW_CONN",
+)
+GITIGNORE_ENV_RULES = (".env", ".env.*", "!.env.example")
 EVIDENCE_H1_RE = re.compile(r"^Evidence:\s*(.*)$")
 CHARACTERIZATION_H1_RE = re.compile(r"^Characterization:\s*(.*)$")
 OQ_HEADING_RE = re.compile(r"^###\s+OQ-(\S+)")
@@ -2613,6 +2726,7 @@ def main() -> None:
         validate_agent_routing()
         + validate_skill_routing_contract()
         + validate_skill_execution_contract()
+        + validate_env_example_contract()
         + collect_validation_errors()
     )
     if errors:

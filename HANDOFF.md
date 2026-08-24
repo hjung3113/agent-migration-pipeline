@@ -5,7 +5,29 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-24
 
-## Next session: Issue #11 implemented + reviewed; PR #67 open, awaiting explicit merge instruction
+## Next session: Issue #11 merged (PR #67, `cb1505d`) — Track P complete; Track D starts at #23
+
+**Track P is done.** `#1 -> #2 -> #14 -> (#7, #8) -> #5 -> #13 -> #6 -> #9 -> #11` all
+implemented, reviewed, and merged. Next work per `migration/ISSUES-PLAN-DRAFT.md` is
+Track D: `#23 -> #20 -> (#18, #22 core) -> #22 live adapter -> #21 (deferred)`, still
+separately gated and untouched. Before starting #23, redo the "구현 시작 전 체크" 7-item
+gate against current `main` (same process as every Track P issue this session), and
+reconfirm the design docs referenced from `docs/12-db-execution-safety-contract.md`
+(#20), `docs/issue-18-mssql-readonly-inspection.md` (#18), `docs/issue-22-db-snapshot-diff-contract.md`
+(#22) still match `main` — they were design-only merges (2026-08-18) and have not been
+re-checked against any of this session's or the #1-#14/#5-#13/#6/#9/#11 sessions' changes.
+Rule-13 Track P/D authorization remains in effect and has not been revoked.
+
+Owner review on PR #67 caught 2 more real gaps beyond the independent T-R1 review below —
+worth noting as a pattern for Track D: **freshly written validators in this repo keep
+under-enforcing their own declared column/field sets on the first pass** (this is now the
+third instance: PR #66's evidence-ref bypass, T-R1's own F1/F2 on this PR, then the owner's
+own further F1/F2 on the *fix* commit). When Track D writes new validator code (#20's DB
+guard, #22's snapshot/diff schema), budget for at least one additional owner-level pass
+after the independent-review pass closes its own findings, not just after the first green
+diff.
+
+## Historical: Issue #11 implemented + reviewed; PR #67 open, awaiting explicit merge instruction
 
 Issue #11 (judge self-check hardening — mandatory negative control, no `where practical`
 waiver) is implemented against the already-merged canonical design
@@ -68,14 +90,36 @@ pipeline as #6/#9:
    scripts/tests/ -q` 401 passed (392 + 9 new), doc-links/OQ green, canonical docs still
    byte-unchanged. Full review posted as a PR comment on #67.
 
-**PR #67 is open, not merged.** Per the 2026-08-22 workflow change (`feedback_no_auto_merge`
-standing memory): open PR + post review, wait for the user's explicit merge instruction.
-This is the last item in Track P per the plan (`... -> #6 -> #9 -> #11`) — **after #67
-merges, Track P is complete.** Track D (`#23 -> #20 -> (#18, #22 core) -> #22 live adapter
--> #21 deferred`) remains separately gated and untouched. Note per
-`migration/ISSUE-11-EXECUTION-PLAN.md` §6: the DB-source-inclusive judge configuration's
-negative control is explicitly out of #11's completion criteria — that combination is
-covered only after #22's live adapter lands (`ISSUES-PLAN-DRAFT.md:76`).
+**Owner post-review round (before merge)** found 2 more real gaps on top of the T-R1
+review, both in the F1/F2-fix commit itself — same recurring class ("checks the shape, not
+the substance"):
+- **F1′** — `JUDGE_SELF_CHECK_REQUIRED_ROW_FIELDS` only required 5 of the 8 template
+  columns, omitting `Material rule/source` and `Injection boundary`; a control row could
+  leave both blank and still pass as a trusted `PASS`.
+- **F2′** — the shared `_split_row()` table-parsing helper (also used by grade-history and
+  evidence tables) didn't honor escaped Markdown pipes (`\|`), so a legitimately-written
+  control row with an escaped pipe in `Baseline`/`Known-wrong mutation` would have its
+  columns shifted and get wrongly rejected — the inverse failure mode (false positive, not
+  a bypass). The Codex GitHub bot flagged the same defect independently.
+- Also asked: `migration/ISSUE-11-EXECUTION-PLAN.md`'s P-6/T-2 text (which described the
+  earlier 5-field state) updated to match the actual 7-field non-Outcome requirement, so
+  the committed plan doesn't contradict the shipped implementation.
+
+Fixed in commit `65b4d97`: both fields added to the required-row-fields tuple,
+`_split_row()` rewritten to a char-by-char scanner that treats `\|` as a literal pipe (fix
+applied at the shared-helper level, not duplicated per-table, since other tables use the
+same parser), regression tests added for both, plan text updated. Re-verified independently
+(not just re-running the PR's own claimed numbers): `validate_scaffold.py` exit 0, `pytest
+scripts/tests/ -q` 404 passed (401 + 3 new), doc-links/OQ green, canonical 3 docs +
+`migration/features/synthetic-demo/verification.md` still byte-unchanged.
+
+**Merged** — squash-merged as `cb1505d` per the user's explicit instruction after
+confirming the second round of fixes. This is the last item in Track P per the plan
+(`... -> #6 -> #9 -> #11`) — **Track P is now complete.** Track D (`#23 -> #20 -> (#18,
+#22 core) -> #22 live adapter -> #21 deferred`) remains separately gated and untouched.
+Note per `migration/ISSUE-11-EXECUTION-PLAN.md` §6: the DB-source-inclusive judge
+configuration's negative control is explicitly out of #11's completion criteria — that
+combination is covered only after #22's live adapter lands (`ISSUES-PLAN-DRAFT.md:76`).
 
 ## Historical: Issue #9 + followup done, merged; continue Track P at #11
 

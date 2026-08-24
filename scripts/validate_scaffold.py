@@ -835,7 +835,7 @@ def validate_env_example_contract(root: Path | None = None) -> list[str]:
         errors.append(f"{path}:{line} [env-example] {message}")
 
     env_path = base / ENV_EXAMPLE_PATH
-    parsed: dict[str, tuple[int, str | None]] = {}
+    parsed: dict[str, list[tuple[int, str | None]]] = {}
     if not env_path.is_file():
         report(ENV_EXAMPLE_PATH, 1, "required file missing")
     else:
@@ -851,7 +851,7 @@ def validate_env_example_contract(root: Path | None = None) -> list[str]:
             else:
                 key = stripped
                 rhs = None
-            parsed[key] = (line_number, rhs)
+            parsed.setdefault(key, []).append((line_number, rhs))
 
         expected_keys = set(ENV_EXAMPLE_KEYS)
         actual_keys = set(parsed)
@@ -860,19 +860,19 @@ def validate_env_example_contract(root: Path | None = None) -> list[str]:
         for key in sorted(actual_keys - expected_keys):
             report(
                 ENV_EXAMPLE_PATH,
-                parsed[key][0],
+                parsed[key][0][0],
                 f"unexpected key: {key}",
             )
         for key in ENV_EXAMPLE_KEYS:
             if key not in parsed:
                 continue
-            line_number, rhs = parsed[key]
-            if rhs != "":
-                report(
-                    ENV_EXAMPLE_PATH,
-                    line_number,
-                    f"{key} must have an empty value",
-                )
+            for line_number, rhs in parsed[key]:
+                if rhs != "":
+                    report(
+                        ENV_EXAMPLE_PATH,
+                        line_number,
+                        f"{key} must have an empty value",
+                    )
 
     gitignore_path = base / ".gitignore"
     rule_lines = {rule: [] for rule in GITIGNORE_ENV_RULES}

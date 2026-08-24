@@ -68,15 +68,27 @@ def test_extra_key_is_reported(tmp_path: Path) -> None:
     assert any("unexpected key: UNDECLARED_CONN" in error for error in errors)
 
 
-@pytest.mark.parametrize("rhs", ["value", "   "])
+@pytest.mark.parametrize(
+    "env_example",
+    [
+        VALID_ENV_EXAMPLE.replace(
+            "MSSQL_PROD_RO_CONN=", "MSSQL_PROD_RO_CONN=value"
+        ),
+        VALID_ENV_EXAMPLE.replace(
+            "MSSQL_PROD_RO_CONN=", "MSSQL_PROD_RO_CONN=   "
+        ),
+        VALID_ENV_EXAMPLE.replace(
+            "MSSQL_PROD_RO_CONN=\n",
+            "MSSQL_PROD_RO_CONN=secret\nMSSQL_PROD_RO_CONN=\n",
+        ),
+    ],
+)
 def test_canonical_keys_require_strictly_empty_rhs(
-    tmp_path: Path, rhs: str
+    tmp_path: Path, env_example: str
 ) -> None:
     write_fixture(
         tmp_path,
-        env_example=VALID_ENV_EXAMPLE.replace(
-            "MSSQL_PROD_RO_CONN=", f"MSSQL_PROD_RO_CONN={rhs}"
-        ),
+        env_example=env_example,
     )
 
     errors = validate_env_example_contract(tmp_path)

@@ -8,7 +8,7 @@ injection contract only. Issues #18/#20/#22 consume this module.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Collection, Mapping
 
 ENGINE_MSSQL = "mssql"
@@ -51,7 +51,7 @@ class ProfileResolutionError(Exception):
 @dataclass(frozen=True)
 class ResolvedProfile:
     profile: ConnectionProfile
-    connection_value: str
+    connection_value: str = field(repr=False)
 
 
 def resolve_connection_profile(

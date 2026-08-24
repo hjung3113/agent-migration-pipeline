@@ -99,6 +99,24 @@ def test_canonical_keys_require_strictly_empty_rhs(
     )
 
 
+def test_duplicate_canonical_key_is_reported_even_when_both_values_are_empty(
+    tmp_path: Path,
+) -> None:
+    write_fixture(
+        tmp_path,
+        env_example=VALID_ENV_EXAMPLE.replace(
+            "MSSQL_PROD_RO_CONN=\n",
+            "MSSQL_PROD_RO_CONN=\nMSSQL_PROD_RO_CONN=\n",
+        ),
+    )
+
+    errors = validate_env_example_contract(tmp_path)
+
+    assert any(
+        "duplicate key: MSSQL_PROD_RO_CONN" in error for error in errors
+    )
+
+
 def test_missing_dotenv_ignore_rule_is_reported(tmp_path: Path) -> None:
     write_fixture(tmp_path, gitignore=".env.*\n!.env.example\n")
 

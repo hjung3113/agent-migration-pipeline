@@ -853,6 +853,14 @@ def validate_env_example_contract(root: Path | None = None) -> list[str]:
                 rhs = None
             parsed.setdefault(key, []).append((line_number, rhs))
 
+        for key, occurrences in parsed.items():
+            if len(occurrences) > 1:
+                report(
+                    ENV_EXAMPLE_PATH,
+                    occurrences[1][0],
+                    f"duplicate key: {key}",
+                )
+
         expected_keys = set(ENV_EXAMPLE_KEYS)
         actual_keys = set(parsed)
         for key in sorted(expected_keys - actual_keys):

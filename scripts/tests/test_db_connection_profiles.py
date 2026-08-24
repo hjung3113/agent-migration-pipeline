@@ -171,6 +171,17 @@ def test_error_rendering_never_includes_connection_secret() -> None:
         assert "SECRET-VALUE" not in rendered
 
 
+def test_resolved_profile_repr_never_includes_connection_secret() -> None:
+    secret = "mssql://user:SUPER-SECRET@host.example:1433/db"
+
+    resolved = resolve_connection_profile(
+        "mssql-prod-ro",
+        environ={"MSSQL_PROD_RO_CONN": secret},
+    )
+
+    assert secret not in repr(resolved)
+
+
 def test_invalid_operation_fails_closed() -> None:
     with pytest.raises(ProfileResolutionError) as raised:
         resolve_connection_profile(

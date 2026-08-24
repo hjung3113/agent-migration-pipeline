@@ -945,12 +945,54 @@ def test_verification_control_row_requires_substantive_cells(tmp_path: Path) -> 
     errors = run_schema(root)
     for field in (
         "Control ID",
+        "Material rule/source",
+        "Injection boundary",
         "Baseline",
         "Known-wrong mutation",
         "Expected detector(s)",
         "Actual detector result(s)",
     ):
         assert any(f"non-empty `{field}` cell" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("field", "row"),
+    [
+        (
+            "Material rule/source",
+            "| JC-001 |  | fixture input | a+b | a+b! | contract-test | FAIL | PASS |",
+        ),
+        (
+            "Injection boundary",
+            "| JC-001 | BR-001 |  | a+b | a+b! | contract-test | FAIL | PASS |",
+        ),
+    ],
+)
+def test_verification_control_row_requires_material_source_and_injection_boundary(
+    tmp_path: Path, field: str, row: str
+) -> None:
+    report = VALID_VERIFICATION.replace(
+        "| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |",
+        row,
+        1,
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any(f"non-empty `{field}` cell" in error for error in errors)
+
+
+def test_verification_control_row_accepts_escaped_pipes_in_values(
+    tmp_path: Path,
+) -> None:
+    report = VALID_VERIFICATION.replace(
+        "| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |",
+        r"| JC-001 | BR-001 | fixture input | a\|b | a\|b! | contract-test | FAIL | PASS |",
+        1,
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    assert run_schema(root) == []
 
 
 def test_verification_control_table_columns_are_exact(tmp_path: Path) -> None:

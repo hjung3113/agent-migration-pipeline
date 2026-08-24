@@ -237,11 +237,13 @@ enum, 테이블 Grade 컬럼 enum. `_split_sections`가 섹션별 라인을 반�
   역방향(self-check PASS + Result FAIL/PARTIAL)은 합법(검증 통과 + 실제 불일치).
   빈 `Result`는 기존 관례(신뢰 주장 부재 → 위반 아님)를 유지한다. 누락/빈
   self-check 필드는 커플링 판정에서 not-PASS로 취급(fail-closed).
-- **P-6. control 표 검사 수위: 고정 8컬럼 정확 일치 + Outcome enum + mode=executed
-  (또는 mode 필누락/무효)일 때 ≥1 행 + 헤더 PASS ⇒ 전 행 PASS.** 근거: template
-  L18–20 고정 컬럼 + docs/03:139(PASS = "required controls were executed
-  successfully")·131(detector 선언 후 전부 거부 증명)·133(no-op 가드 — Baseline/
-  Known-wrong mutation 컬럼 존재 자체가 기록 의무). mode=reused일 때 행 요구는
+- **P-6. control 표 검사 수위: 고정 8컬럼 정확 일치 + 각 control row의 7개
+  non-Outcome 컬럼(Control ID, Material rule/source, Injection boundary, Baseline,
+  Known-wrong mutation, Expected detector(s), Actual detector result(s)) 비어있지 않음
+  + Outcome enum + mode=executed (또는 mode 필누락/무효)일 때 ≥1 행 + 헤더 PASS ⇒
+  전 행 PASS.** 근거: template L18–20 고정 컬럼 + docs/03:139(PASS = "required
+  controls were executed successfully")·131(detector 선언 후 전부 거부 증명)·133(no-op
+  가드 — 7개 non-Outcome 컬럼의 실질 값 기록 의무). mode=reused일 때 행 요구는
   면제(재사용은 인용된 이전 증거가 그 역할 — template L22). 역방향(헤더 FAIL/BLOCKED
   + 전 행 PASS)은 canonical 문서가 못 박지 않으므로 기계화하지 않고 review 영역으로
   남긴다(#9 P-5와 동일 원칙). mode 필드 누락 시 fail-closed로 executed 요구를
@@ -289,7 +291,7 @@ T-H1 HANDOFF.md 갱신 + Issue #11 구현 코멘트 + PR 개설(merge는 사용�
 |---|---|---|---|---|
 | T-0 | 게이트 7항목 재확인 + 본 실행 계획 작성·커밋 | `migration/ISSUE-11-EXECUTION-PLAN.md` | — | — (본 세션, 완료) |
 | T-1 | **운영 파일 정렬**: ① `parity-verification/SKILL.md` 규칙 7 same-slot 재작성(P-1의 (a)–(e)) + 절차 4단계 docs/03 게이트 절·template 기록 참조 추가 ② `verifier.md` 절차 3단계 same-slot 재작성(P-2, `[Input]` 마커 유지) ③ 보존 체크리스트(#6 F1/F2/F5 교훈): 나머지 10개 judge 규칙 원문(특히 규칙 4–5 PG guard), 규칙 1–3/8–11, 5섹션 순서·마커·BLOCKED/PARTIAL 언급, #7 양 섹션, #13 STOP/Escalation, #8 읽기전용 persistence 위임, `docs/templates/verification.md`·docs/03 참조 존치, 모든 조건절 원문, **"where practical" 재유입 부재** ④ 신규 `scripts/tests/test_judge_self_check_contract.py`: 두 파일에 (i) "where practical" 부재 (ii) 필수 self-check 언어·BLOCKED 커플링·재사용 규칙·template/docs/03 참조 존재 (iii) 구조 불변(5섹션·마커·routing 섹션·STOP 위임) 문자열 존재 검사 | `.opencode/skills/parity-verification/SKILL.md`, `.opencode/agents/verifier.md`, `scripts/tests/test_judge_self_check_contract.py`(신규) | T-0 | A |
-| T-2 | **validator 강화**: `validate_verification()` 내부 확장(P-3) — V1 `Judge self-check` 헤더 필드 필수 + enum PASS/FAIL/BLOCKED, V2 커플링(P-5), V3 `## Judge self-check` 섹션 정확히 1개, V4 섹션 필드 6종 필수·비음(Effective judge configuration / Configuration fingerprint / Self-check mode enum executed/reused / Reused self-check evidence ref / Safety-isolation note / Blocker) + mode=reused ⇒ ref ≠ N/A·비음(P-7), V5 control 표(P-6: 고정 8컬럼 정확 일치, mode=executed 또는 mode 결함 시 ≥1 행, Outcome 셀 enum), V6 헤더 PASS ⇒ 전 행 Outcome PASS. 신규 상수 L858 인근. 테스트: `test_validate_schema.py` — `VALID_VERIFICATION` 정합 갱신 + V1–V6 양성/음성 케이스(커플링 3치×self-check 3치 조합, reused 무인용, executed 무행, 컬럼 드리프트, 빈 Result 허용 유지, synthetic-demo 형태의 줄바꿈 연속 값) | `scripts/validate_scaffold.py`, `scripts/tests/test_validate_schema.py` | T-0 | A |
+| T-2 | **validator 강화**: `validate_verification()` 내부 확장(P-3) — V1 `Judge self-check` 헤더 필드 필수 + enum PASS/FAIL/BLOCKED, V2 커플링(P-5), V3 `## Judge self-check` 섹션 정확히 1개, V4 섹션 필드 6종 필수·비음(Effective judge configuration / Configuration fingerprint / Self-check mode enum executed/reused / Reused self-check evidence ref / Safety-isolation note / Blocker) + mode=reused ⇒ ref ≠ N/A·비음(P-7), V5 control 표(P-6: 고정 8컬럼 정확 일치, 모든 행의 7개 non-Outcome 컬럼 비어있지 않음, mode=executed 또는 mode 결함 시 ≥1 행, Outcome 셀 enum), V6 헤더 PASS ⇒ 전 행 Outcome PASS. 신규 상수 L858 인근. 테스트: `test_validate_schema.py` — `VALID_VERIFICATION` 정합 갱신 + V1–V6 양성/음성 케이스(커플링 3치×self-check 3치 조합, reused 무인용, executed 무행, 컬럼 드리프트, 빈 Result 허용 유지, synthetic-demo 형태의 줄바꿈 연속 값) | `scripts/validate_scaffold.py`, `scripts/tests/test_validate_schema.py` | T-0 | A |
 | T-I1 | 통합 검증: `python3 scripts/validate_scaffold.py` exit 0, `python3 -m pytest scripts/tests/ -q` 전수 green(373 + 신규), `check_doc_links.py`/`check_oq_updates.py` green, `git diff`로 synthetic-demo verification.md·canonical 3문서 무변경 확인, 구조 계약(스킬 실행/라우팅/에이전트/커맨드/STOP/durable state) green 유지 확인. 미달 시 수정 후 재실행 | (수정 대상 없음 — 검증 단계) | T-1, T-2 | — |
 | T-R1 | 독립 adversarial review: §6 완료 기준 대조. 특히 (a) #6 F1/F2 패턴 — T-1 재작성 pre/post diff로 조건절·문서 참조 누락/변형 확인 (b) "where practical" 재유입 부재(운영 파일 전체, #6 F5 역방향) (c) validator 오탐 탐색 — 정당한 보고 형태(줄바꿈 연속 값, blockquote 노트, reused 모드 무행 표, 빈 Result, DB comparison 표의 PASS/FAIL/BLOCKED 셀 오탐) (d) 과경화 탐색 — canonical이 못 박지 않은 검사(P-6 역방향 등)를 몰래 넣지 않았는지 (e) Non-goals 준수·stale 권고 부활 없음. 발견 사항은 수정 후 re-verify | (리뷰 보고) | T-I1 | — |
 | T-H1 | HANDOFF.md in-place 갱신(근거 SHA·테스트 수·남은 불확실성 포함), Issue #11에 구현 코멘트, PR 개설 + 리뷰 코멘트 게시 후 **사용자의 명시적 merge 지시 대기**(2026-08-22 워크플로 변경: Track P/D PR 자동 merge 금지). merge 후 소유자 리뷰 코멘트 추적(#61/#62/#65 선례) | `HANDOFF.md`, GitHub | T-R1 | — |

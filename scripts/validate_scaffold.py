@@ -879,6 +879,8 @@ JUDGE_SELF_CHECK_COLUMNS = (
 REUSED_SELF_CHECK_EMPTY_SENTINELS = frozenset({"n/a", "none", "tbd", "-"})
 JUDGE_SELF_CHECK_REQUIRED_ROW_FIELDS = (
     "Control ID",
+    "Material rule/source",
+    "Injection boundary",
     "Baseline",
     "Known-wrong mutation",
     "Expected detector(s)",
@@ -936,9 +938,26 @@ def _split_row(line: str) -> list[str]:
     s = line.strip()
     if s.startswith("|"):
         s = s[1:]
-    if s.endswith("|"):
+    if s.endswith("|") and not s.endswith(r"\|"):
         s = s[:-1]
-    return [cell.strip() for cell in s.split("|")]
+
+    cells = []
+    current = []
+    index = 0
+    while index < len(s):
+        char = s[index]
+        if char == "\\" and index + 1 < len(s) and s[index + 1] == "|":
+            current.append("|")
+            index += 2
+            continue
+        if char == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    cells.append("".join(current).strip())
+    return cells
 
 
 def _is_separator_row(cells: list[str]) -> bool:

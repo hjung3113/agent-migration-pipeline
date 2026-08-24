@@ -5,39 +5,86 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-24
 
-## Next session: Issue #23 implemented (PR #68 open) — Track D continues at #20
+## Next session: Issue #23 merged (PR #68, `2fd33c6`) — Track D continues at #20
 
-Issue #23's committed execution plan (`ed850f1`) was executed on
-`hjung3113/issue23-plan`. The implementation is in `2e5db0f`; the owner-level
-validator remediation is in `a26f47e`; the first fresh-review fixes are in
-`19cf39f`; the current owner/bot review remediation is the follow-up change on
-this branch. T-1 adds the exact three-profile resolver and canonical
-`.env.example`; T-2 adds the additive `validate_env_example_contract()` check
-and its `main()` wiring.
+**Issue #23 (DB connection profile resolver + secret injection contract) is
+merged to `main`.** Track D order per `migration/ISSUES-PLAN-DRAFT.md` is
+`#23 -> #20 -> (#18, #22 core) -> #22 live adapter -> #21 (deferred)`. Before
+starting #20, redo the "구현 시작 전 체크" 7-item gate against current `main`
+(same process #23 used — see `migration/ISSUE-23-EXECUTION-PLAN.md` §1 for the
+template), and reconfirm `docs/12-db-execution-safety-contract.md` still
+matches `main` (design-only merge from 2026-08-18, not re-checked against any
+of this session's changes). #20 consumes #23's resolver/profile registry
+directly (`from scripts.db.connection_profiles import resolve_connection_profile,
+PROFILES`) — read `scripts/db/connection_profiles.py` as it now stands, not the
+execution-plan's proposed shape, since two review rounds changed it after the
+plan was written (see below). Rule-13 Track P/D authorization remains in
+effect and has not been revoked.
 
-The current review remediation closes four additional findings: unknown-profile
-errors no longer echo caller input; `PROFILES` is runtime-immutable via
-`MappingProxyType`; `.gitignore` protection-defeating `.env*` negations are
-reported; and non-canonical whitespace around `.env.example` key tokens is
-rejected. Regression coverage covers each finding, including the existing
-empty-value duplicate-key and secret-safe `ResolvedProfile` repr contracts.
+Built via the established pipeline (opencode plan -> codex implement ->
+independent review -> fix -> merge): opencode (GLM-5.3, Build auto) redid the
+7-item gate for #23 against `main` (`b0ea736`, all 7 passed) and wrote
+`migration/ISSUE-23-EXECUTION-PLAN.md` (`ed850f1`) — a T-1 (resolver +
+`.env.example`) ∥ T-2 (`validate_env_example_contract()`) DAG plus 10 derived
+judgment calls (P-1..P-10). codex (`gpt-5.6-luna`, max) implemented it
+verbatim (`2e5db0f`), opened PR #68.
 
-The later DB tools consume the shared seam as:
-`from scripts.db.connection_profiles import resolve_connection_profile, PROFILES`.
-No DB driver, connection code, dotenv loading, config-file path, raw connection-string
-CLI, fourth profile, or production read-write profile was added. #18/#20/#22 still own
-their future consumer wiring, target identity/SQL guards, and database behavior. OQ-021
-(legacy DLL configuration) remains OPEN and unchanged.
+**Process note for future issues: codex's own post-implementation self-check
+is not a substitute for the independent review this repo's process requires
+(AGENTS.md rule 10, same as #6/#9/#11).** This session, codex's first commit
+after implementation (`a26f47e`, "fix: validate duplicate env example
+entries") was labeled internally as "T-R1" in its own terminal output, but it
+was self-review of its own diff, not a fresh independent pass. A genuinely
+independent two-phase review (fresh subagent, phase 1 sees only PR
+title/body and writes falsifiable hypotheses before seeing any code; phase 2
+gets diff/repo access and verifies each hypothesis against real code/tests)
+was run afterward and found the self-fix incomplete plus one unrelated real
+defect — both posted as a PR comment, both fixed in `19cf39f`. **Do not accept
+an implementer-run self-check as the required independent review pass** —
+always dispatch a fresh reviewer with no context from the implementation
+session.
 
-Evidence at handoff: `python3 scripts/validate_scaffold.py` passed; `python3 -m pytest
-scripts/tests/ -q` passed 434 tests (404 baseline plus 30 new/parameterized cases);
-document-link and OQ checks passed; `git check-ignore` returned 0 for `.env` and
-`.env.local` and 1 for `.env.example`; `scripts/db/` has no driver/dotenv imports; PR
-#68 is OPEN. The resolver consumer seam remains
-`from scripts.db.connection_profiles import resolve_connection_profile, PROFILES`.
-OQ-021 (legacy DLL configuration) remains OPEN and unchanged; #18/#20/#22 still own
-future consumer wiring and database behavior. Merge remains pending the user's
-explicit instruction after PR review.
+Separately, the user's own manual review (a formal GitHub PR review, plus the
+repo's `chatgpt-codex-connector` bot review) found 4 more real findings on the
+already-fixed HEAD, none overlapping the independent-review findings:
+unknown-profile errors echoed the raw caller-supplied string (secret-leak risk
+if misused with a raw connection string); `PROFILES` was type-hinted
+`Mapping` but was an actually-mutable `dict` (a caller could inject a 4th /
+production-read-write profile at runtime, bypassing the fixed-registry
+invariant); `.gitignore` validation checked only the 3 canonical rules'
+presence/order and never noticed a later negation like `!.env.local` that
+would silently un-ignore a secret-bearing file; and `.env.example` key parsing
+stripped whitespace around the key token, letting non-canonical spacing like
+`KEY =` pass as a valid canonical key. All 4 independently reproduced against
+real code before dispatch, all 4 fixed with regression tests in `ac8a231`, all
+4 independently re-verified (not just re-running codex's claimed numbers)
+before merge. Every review thread got an inline reply citing the fix commit;
+no review was resolved/dismissed by the fixing agent.
+
+**Running tally of the "checks shape, not substance" validator defect
+pattern** (first flagged PR #66, recurred PR #67 across 2 rounds): #23's T-2
+validator needed *two* remediation rounds after its first green pass — first
+for a duplicate-key gap the self-fix only partially closed, then for the
+`.gitignore` negation-scanning gap the user's review caught. Six real defects
+total surfaced across this PR's two review rounds, none from the same
+oversight. For #20 (the DB write guard, the highest-lock-in-risk item in
+Track D per `ISSUES-PLAN-DRAFT.md`'s own validation-scaling principle),
+budget for at least two independent review passes before treating it as
+mergeable, not one.
+
+Final merged state (`main` @ `2fd33c6`, re-verified after merge, not just at
+PR HEAD): `python3 scripts/validate_scaffold.py` exit 0; `python3 -m pytest
+scripts/tests/ -q` — 434 passed (404 baseline + 30 new/parameterized);
+`check_doc_links.py` / `check_oq_updates.py` green; `git check-ignore`
+returns 0 for `.env`/`.env.local`, 1 for `.env.example`; no driver/dotenv
+imports under `scripts/db/`; `PROFILES` confirmed runtime-immutable
+(`MappingProxyType`, item assignment raises `TypeError`); no DB driver,
+connection code, dotenv loading, config-file input path, raw
+connection-string CLI, 4th profile, or production read-write profile exists
+anywhere in the tree. `docs/12-db-connection-secrets-contract.md`, `docs/06`,
+and `.gitignore` are byte-unchanged from before #23 (no design-doc churn).
+OQ-021 (legacy DLL configuration mechanism) remains OPEN, untouched — #23
+explicitly does not resolve it.
 
 Owner review on PR #67 caught 2 more real gaps beyond the independent T-R1 review below —
 worth noting as a pattern for Track D: **freshly written validators in this repo keep

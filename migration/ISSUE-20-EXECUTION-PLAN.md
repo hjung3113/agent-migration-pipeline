@@ -140,7 +140,8 @@ structure"(L336–355). 구체적으로:
   (신규), `scripts/db/connectors/base.py`·`mssql.py`·`postgresql.py`(신규),
   `scripts/db/db_guard.py`(신규), `scripts/tests/test_db_target_metadata.py`·
   `test_db_sql_classification.py`·`test_db_connectors.py`·`test_db_guard.py`(신규),
-  `scripts/validate_scaffold.py`(신규 독립 검사 함수 + 상수 + `main()` 1줄),
+  `scripts/validate_scaffold.py`(신규 독립 검사 함수 2건 + 상수 + `main()` 배선
+  2줄 — 경계 검사·target-metadata 모양 검사),
   `scripts/tests/test_db_driver_boundary.py`(신규), `HANDOFF.md`(T-H1).
 - 비변경(Non-goals L423–436 + 게이트 2): `docs/12-db-execution-safety-contract.md`·
   `docs/12-db-connection-secrets-contract.md`·`scripts/db/connection_profiles.py`·
@@ -202,6 +203,14 @@ structure"(L336–355). 구체적으로:
    차단)에서 #19 개념 없이 정의된다.
 5. Non-goals L429가 "decide #19 masking/subsetting/materialization semantics"를
    명시적으로 금지한다.
+6. 유일한 미약한 접점은 설계 L320("#19 may persist higher-level materialization
+   evidence ...; that evidence references guard/run metadata")이다 — 이는 본
+   계획의 audit 이벤트 필드(P-6, L295–309)로 이미 충족 가능하며, #20이 별도의
+   run-id 핸들 API를 제공해야 한다는 요구가 아니다(본 세션 재확인: L320는
+   #19 증거가 guard audit을 "참조"한다는 redaction 규칙이지 guard 공개 API
+   의무를 부과하지 않는다). 이후 #19 구현이 더 풍부한 run 핸들을 요구하면
+   그때만 §5 트리거 1/8 경로의 신규 API 결정이다 — 본 판정(의존 없음)은
+   유지된다.
 
 따라서 본 계획은 #19 재오픈을 제안하지 않고, #20을 설계 범위 그대로(attestation +
 capability 경계, 소비 도구 부재)로 계획한다. **구현 중 이 판정이 깨지는 순간
@@ -321,11 +330,21 @@ T-5가 validator에 배선되면 CI가 자동으로 driver 경계를 강제한�
   식별자 quote(`[ ]`, `" "`)/깊이 0 세미콜론 batch 분할을 인식해 L195(주석·공백·
   대소문자·순서가 인가를 바꾸지 못함)와 finding 1·2의 우회(문자열 내 키워드,
   주석 은닉, `SELECT ... INTO`, `MERGE`/`TRUNCATE`, `EXEC` 생략형 bare 프로시저
-  호출)를 막는다. read allowlist는 `INTO` 없는 `SELECT`와 최종 문이 `SELECT`인
-  `WITH` CTE뿐. rollback 포장 강등 금지(L197)는 문장별 분류 + batch 최대 위험
-  계승으로 자연 성립. transaction 제어 등을 `unknown`에 두는 것은 어떤 현 소비
-  도구도 그것을 필요로 하지 않기 때문이고(현재 소비 도구 0), 필요해지면 §5
-  트리거 8(정책 변경)이다. parser 의존성 추가는 금지(트리거 4).
+   호출)를 막는다. read allowlist는 `INTO` 없는 `SELECT`와 최종 문이 `SELECT`인
+   `WITH` CTE뿔인데, **`INTO`·위험 동사 토큰은 "최상위 깊이"가 아니라 문장 내
+   어느 깊이에서든 부재해야 한다**(T-2 상세 — CTE 본문 `SELECT ... INTO`,
+   PG data-modifying CTE, 구분자 없는 다중 문장 3종 우회의 구조적 봉쇄).
+   rollback 포장 강등 금지(L197)는 문장별 분류 + batch 최대 위험
+   계승으로 자연 성립. **설계 failure 표 9행의 조건 열에 `unknown`이 포함돼
+   "test 쓰기 세션에서는 unknown 포함 batch도 허용"으로 읽을 여지가 있으나**
+   L188(`unknown` → denied, 대상 무제한정)·L194(unknown 포함 batch는 denied)·
+   L372(판단 불능 → block)를 함께 읽으면 보수적 판독은 **unknown 포함 batch는
+   test 쓰기 세션에서도 거부**다 — `BATCH_RANK`의 `unknown`(3) >
+   mutation/ddl/procedure-exec(2)이 그 구현이며, 모호성의 fail-closed 해석일
+   뿐 임의 완화가 아니다(완화는 아래 트리거 5 경로만). transaction 제어 등을
+   `unknown`에 두는 것은 어떤 현 소비
+   도구도 그것을 필요로 하지 않기 때문이고(현재 소비 도구 0), 필요해지면 §5
+   트리거 5(허용 목록 확장 = 정책 변경)이다. parser 의존성 추가는 금지(트리거 4).
 - **P-6. audit = 호출자 sink(기본 stderr)로의 단일 줄 JSON 이벤트, 필드는 L295–309
   최소 집합 그대로, preview/hash는 분류기의 literal 마스킹 정규형에서 파생,
   위험 연산 pre-audit sink 실패 시 실행 차단. `open_test_readwrite` 세션 개방
@@ -350,10 +369,15 @@ T-5가 validator에 배선되면 CI가 자동으로 driver 경계를 강제한�
   제공하고 guard가 `profile.engine`과 비교(L150). probe SQL 자체가 `read` class로
   분류되는지 테스트로 고정(procedure drift 방지).
 - **P-8. 우회 방지 정적 검사 = `validate_scaffold.py`에 신규 독립 함수
-  `validate_db_driver_boundary()` additive 추가(AST import 스캔). 금지 대상 =
-  외부 MSSQL/PG driver(`pyodbc`, `pymssql`, `psycopg`, `psycopg2`, `sqlalchemy`)
-  import와 `scripts.db.connectors` import를, `scripts/**` 전체(단 `scripts/db/
-  connectors/**` 제외)에서 차단. 허용 예외는 열거 상수만.** 근거: L351("CI/static
+   `validate_db_driver_boundary()` additive 추가(AST import 스캔 + 동적 import
+   통로 금지). 금지 대상 = 외부 MSSQL/PG 도달 가능 driver 8종(`pyodbc`,
+   `pymssql`, `psycopg`, `psycopg2`, `sqlalchemy`, `asyncpg`, `pg8000`,
+   `adodbapi`) — 마지막 3종은 비동기 PG·pure-Python PG·Windows ADO 경로로,
+   열거에서 빠지면 B1 자체가 우회로가 된다(finding 9는 "직접 driver import"
+   일반이지 특정 5종이 아니며, 현재 저장소 사용 0 — 본 세션 grep 확인) — 의
+   import와 `scripts.db.connectors` import(+ 상대 import 형태)를, `scripts/**`
+   전체(단 `scripts/db/
+   connectors/**` 제외)에서 차단. 허용 예외는 열거 상수만.** 근거: L351("CI/static
   validation should reject direct DB-driver imports … outside the approved
   connector/guard boundary … AST/import checks or an equivalent deterministic
   rule; must not rely only on code-review convention") + acceptance 12 + #23 T-2
@@ -369,7 +393,12 @@ T-5가 validator에 배선되면 CI가 자동으로 driver 경계를 강제한�
   명시 — 즉 이 요구의 코드 부분은 존재하지 않는다(검증 금지). provisioning/증거는
   운영 사항이고(L87–93), guard의 책임은 계정이 과권한이어도 독립적으로 위험 실행을
   거부하는 것(L95–97, L240) — 그것은 T-4의 RO 차단으로 이미 구현된다. 별도 문서
-  신규 작성도 하지 않는다(`.env.example` 주석과 docs/12 자체가 지시문 역할).
+  신규 작성은 하지 않는다 — AC2의 "documented"는 docs/12 자체(L83–97)가 담당하고,
+  `.env.example` 현행 주석은 profile 용도·capability만 기술한다(server-enforced
+  read-only 요구는 기술하지 않음 — 본 세션 확인. #23 소유 파일이라 본 계획이
+  고치지도 않는다). 따라서 "계정이 실제 read-only로 provision됐다"는 배포 사실은
+  expected-target 값과 함께 T-H1에서 사용자에게 명시적으로 전달하고 확인을
+  받는다(AC2를 완료로 보고하는 조건에 사용자 확인 포함).
 - **P-10. acceptance 항목 11(#18/#19/#21/#22가 공통 경계 소비)은 "제공" 기준.**
   근거: 소비 도구가 아직 존재하지 않고 L430 Non-goal이 그 구현을 명시 금지 — #23
   실행계획의 동일 패턴(acceptance "#18–#22 사용" 행을 "이후-소비 기준"으로 표기)
@@ -532,11 +561,18 @@ def redact(sql: str) -> str   # normalized_sql 산출 규칙의 단독 노출 (�
 분류 규칙(설계 L181–198 표와 규칙의 기계화 — P-5):
 
 - **tokenizer**: `--` 행 주석, 중첩 `/* */` 블록 주석, `N'...'`/`'...'` 문자열
-  (`''` escape), `[...]`/`"..."` 식별자 quote, 숫자/16진 literal, 깊이 0 `;`
-  batch 분할(문자열·주석·괄호 내부의 `;`은 분할 아님). 대소문자 무시 키워드
-  인식은 항상 quote 밖 토큰에서만.
-- **read 인정(allowlist)**: (a) 최상위 `INTO` 토큰이 없는 `SELECT` 시작 문장;
-  (b) `WITH` CTE 정의(괄호 깊이 추적) 이후 최종 문이 `INTO` 없는 `SELECT`.
+  (`''` escape), `[...]`/`"..."` 식별자 quote, 숫자/16진 literal, batch 분할 =
+  깊이 0 `;` **및** 깊이 0 독립 `GO` 토큰(T-SQL batch 구분자 — 둘 다 문자열·
+  주석·괄호 내부에서는 분할 아님). 대소문자 무시 키워드
+  인식은 항상 quote 밖 토큰에서만, 토큰 단위 정확 일치로(`[delete]` quote
+  식별자·`fn_delete_rows` 같은 단일 식별자는 키워드와 접두 불일치).
+- **read 인정(allowlist)**: (a) `SELECT` 시작 문장으로서 문장 전체(**괄호 내부
+  포함 전 깊이**)에 `INTO` 토큰과 위험 동사 토큰(아래 verb 매핑의 mutation/
+  ddl/procedure-exec/privileged 집합)이 하나도 없을 것; (b) `WITH` CTE 정의
+  (괄호 깊이 추적) 이후 최종 문이 `SELECT`이면서 CTE 본문 포함 문장 전체에
+  같은 금지 토큰이 없을 것. "최상위 깊이만 검사"로는 CTE 본문 `SELECT ... INTO`
+  와 PG data-modifying CTE(`WITH d AS (DELETE FROM t RETURNING *) SELECT *
+  FROM d` — 최종 문이 SELECT여도 행을 삭제한다)가 `read`로 오인정된다.
   이 2형태 외에는 어떤 것도 `read`가 아니다.
 - **verb 매핑(첫 토큰 기준, 전부 대소문자 무시)**:
   `mutation`: `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `BULK INSERT`, `COPY`,
@@ -549,6 +585,14 @@ def redact(sql: str) -> str   # normalized_sql 산출 규칙의 단독 노출 (�
   (세부는 verb+다음 토큰 조합의 명시 목록으로);
   `unknown`: 그 외 전부 — `SET`, `BEGIN`/`COMMIT`/`ROLLBACK`, `USE`, `DECLARE`,
   `PRINT`, `WAITFOR`, `GO`, 파싱 불능·빈 문장(빈 문장은 batch에서 제거).
+- **전 깊이 위험 토큰 하한(추가 방어)**: 문장의 class는 (첫 토큰 또는 CTE 최종
+  문 verb 매핑 결과)와 (문장 내 **어느 깊이에서든** 등장하는 위험 동사 토큰의
+  class)의 최댓값으로 확정한다. 첫 토큰만 보면 `;`/`GO` 없이 붙어 들어온 다중
+  문장(`SELECT 1 TRUNCATE TABLE t`)이 `read`로 오인정될 수 있고, 그런 blob이
+  실제로 서버에서 다중 문장으로 실행되는지는 서버 파서 구현에 달린 문제다 —
+  guard는 서버 파서의 문장 분리 행동에 의존하지 않는다(L175: SQL 검사는
+  방어선). 이 규칙의 오차 방향은 과차단뿐이다(합법 read에 위험 동사 토큰이
+  깊이 무관하게 섞여 있는 경우는 quote 식별자 규칙상 사실상 없다).
 - **batch 규칙**: 구성 문장 class의 `BATCH_RANK` 최대값 계승; `unknown`(rank 3)
   포함 시 batch도 `unknown`(read로 강등 금지, L194); `privileged`(4)가 최우선.
   rollback 포장(`BEGIN TRAN; INSERT...; ROLLBACK`)은 INSERT 문장이 `mutation`이므로
@@ -565,9 +609,16 @@ def redact(sql: str) -> str   # normalized_sql 산출 규칙의 단독 노출 (�
 2. **우회 방지**: 문자열 literal 내 `INSERT` 텍스트가 read를 바꾸지 않음; 주석
    은닉(`/* INSERT */ SELECT 1` → read, `-- DROP` 행 주석); 중첩 블록 주석;
    대소문자 혼합(`iNsErT`); 문자열 내 `;` 미분할(`SELECT ';'` 단일 문장);
-   `SELECT ... INTO` 변형(공백/줄바꿈 삽입) 전부 mutation.
+   `SELECT ... INTO` 변형(공백/줄바꿈 삽입) 전부 mutation; **CTE 본문
+   `SELECT ... INTO`**(`WITH x AS (SELECT * INTO t2 FROM src) SELECT * FROM x`
+   → mutation); **PG data-modifying CTE**(`WITH d AS (DELETE FROM t RETURNING *)
+   SELECT * FROM d` → mutation); **구분자 없는 다중 문장**(`SELECT 1 TRUNCATE
+   TABLE t` → ddl, `SELECT 1 DELETE FROM t` → mutation); **`GO` 구분**
+   (`SELECT 1 GO TRUNCATE TABLE t` → ddl, `GO` 단독 문장 → unknown).
 3. batch: `SELECT`+`INSERT` 혼합 → mutation; read+unknown 혼합 → unknown(강등
-   금지); rollback 포장 INSERT → mutation; 순서 변경이 class를 바꾸지 않음(L195).
+   금지); rollback 포장 INSERT → mutation; 순서 변경이 class를 바꾸지 않음(L195);
+   **mutation+unknown 혼합 batch는 `unknown`**(test 쓰기 세션에서도 거부 —
+   P-5의 failure 표 9행 보수적 판독, T-4 8단계와 정합).
 4. CTE: `WITH x AS (SELECT..) SELECT..` → read; `WITH x AS (..) INSERT..` →
    mutation; 괄호 내 세미콜론 무시.
 5. 정규형/redaction: literal 마스킹으로 값이 달라도 hash 동일; 구조 다르면 hash
@@ -610,6 +661,15 @@ class EngineConnector(Protocol):
 - probe(MSSQL): `SELECT @@SERVERNAME`(server) / `SELECT DB_NAME()`(database).
   probe(PostgreSQL): `SELECT current_database()` / server는 연결 객체의 host·port
   속성 → `"host:port"` 문자열. engine은 connector 상수로 반환(L150 비교용).
+- **probe 결과 형태 무결성**(connector 책임): 결과 0행·NULL·빈 문자열·예상 밖
+  열 구성은 `ConnectorError`로 승격 — "값을 얻지 못함"(probe-failure)과 "값은
+  있으나 예상과 다름"(attestation-mismatch)을 섞지 않는다(설계 L154가 둘 다
+  차단하므로 안전에는 동일하나, 이유 분리가 audit/진단 정확성의 요건이고
+  guard의 형태 재검증과 이중이 된다). 또한 engine attestation의 실제 증거는
+  **엔진별 방언 probe가 성공한 사실 자체**다 — connector 선택이 profile.engine
+  에서 나오므로 상수 비교는 자기일치적이고, 잘못된 엔진에 연결되면 방언 probe
+  (`@@SERVERNAME` ↔ `current_database()`)가 실패해 probe-failure로 차단된다.
+  이 메커니즘을 주석·테스트로 명시한다(§6 failure 표 4행 참조).
 - probe·fetch·execute는 `params`를 positional placeholder 전용으로 driver에
   전달(문자열 보간 금지 — SQL 합성 우회 경로 차단).
 - `connect`는 connection 객체를 반환하되 그 객체는 **guard 내부에서만** 사용되며
@@ -629,6 +689,13 @@ class EngineConnector(Protocol):
 5. `execute`가 driver cursor를 호출해 rowcount 반환; `params`가 placeholder로
    전달됨(보간 부재).
 6. `ConnectorError` 메시지에 연결 값 sentinel 부재.
+7. **probe 형태 무결성 3분화**: fake probe가 (i) 예외·timeout → `ConnectorError`
+   (probe-failure 경로), (ii) 0행·NULL·빈 문자열·열 구성 이상 반환 →
+   `ConnectorError`(probe-failure 경로 — mismatch 아님), (iii) 정상 형태지만
+   예상과 다른 값 반환 → `AttestedIdentity` 그대로 반환(값 비교·차단은 guard의
+   attestation-mismatch 경로 — connector는 값 판단하지 않음)의 세 경로가
+   구분됨. (iii)에서 `""`가 아닌 이상한 값이 그대로 흘러가는 것이 올바른 동작
+   (guard P-4 비교가 차단).
 
 ### T-4 — `db_guard.py`: 세션·attestation·capability 강제·audit
 
@@ -665,11 +732,24 @@ class TestWriteSession:   # fetch_one / fetch_all / execute / close + context ma
    `profile.capability == read-write` 재확인(`PROFILES` 기준 — L147–148; registry
    미래 변경에 대한 fail-closed).
 4. `get_expected_target` — 미해결/부재 → `missing-target-metadata` 차단.
+   **추가로 세션 개방 경로에서 레지스트리 전체 모양 검증(T-1
+   `validate_target_metadata` M1–M4)을 실행한다**(3-entry 레지스트리라 상수
+   비용 — 첫 개방 시 1회 검증 후 캐시). 이 배선이 없으면 "레지스트리 test
+   값과 env 연결값이 **둘 다** prod를 가리키는 이중 오구성"에서 attestation이
+   일치(통과)해 버린다 — 설계 L122가 "Configuration/**preflight rejects
+   execution** when ... a test target identity equals an approved production
+   identity"로 요구하는 것은 바로 이 실행 시점 차단이며, 정적 검증·CI만으로는
+   배치된 상태를 보호하지 못한다. 모양 결함 발견 → `missing-target-metadata`
+   차단(acceptance 13.7의 잔여 우측 케이스, 테스트 추가).
 5. engine 매핑 커넥터 선택(`connector_overrides`는 테스트 주입용; 기본은 engine→
    connector 고정 매핑) → `connect` → `identity_probe` → `AttestedIdentity`.
-6. attestation(P-4): engine == profile.engine, server/database `strip()` 정확
-   일치 — 불일치 → `attestation-mismatch`; probe 예외/timeout → `probe-failure`.
-   `open_test_readwrite`의 개방 차단 시 audit 이벤트 발행(P-6).
+6. attestation(P-4): 먼저 `AttestedIdentity` **형태 재검증**(engine/server/
+   database가 전부 None 아닌 비빈 문자열 — 위반 → `probe-failure`로 취급;
+   connector(T-3)와 guard 양쪽에서 확인하는 이중 방어) 후 engine ==
+   profile.engine, server/database `strip()` 정확 일치 — 불일치 →
+   `attestation-mismatch`; probe 예외/timeout/형태 위반 → `probe-failure`.
+   세 경로(형태 무결성·값 불일치·probe 실패) 전부 차단임을 각각 별도 테스트로
+   증명(L154). `open_test_readwrite`의 개방 차단 시 audit 이벤트 발행(P-6).
 7. 세션 생성. 세션은 connector·connection·expected target을 **private**으로만
    보유 — 공개 속성은 메서드뿐(`connection`/`cursor`/`driver`/`connector` 등의
    공개 속성 부재를 테스트로 고정).
@@ -687,9 +767,29 @@ class TestWriteSession:   # fetch_one / fetch_all / execute / close + context ma
    `sql_preview`(redacted)·`statement_hash`·`outcome`(allowed|blocked|succeeded|
    failed)·`reason`(해당 시). 기본 sink = stderr. 파라미터 값·연결 값·row 값은
    어떤 필드에도 존재할 수 없다(구조적으로 — preview/hash 원천이 T-2 정규형뿐).
-10. 우회로 부재 확인 항목(L322–334): 어떤 함수·플래그·env도 attestation/allowlist/
-    차단을 무효화하지 않음 — `db_guard` 모듈이 driver·connector 심볼을 재수출하지
-    않음을 테스트로 고정.
+10. 우회로 부재(L322–334 금지 메커니즘 7종 **각각**에 구조적 방지 + 그 방지를
+     증명하는 테스트 — 총칭만이 아니라 대응 증명):
+     - `--force-production-write` / `--unsafe` / "type YES" 확인 프롬프트(3종):
+       guard는 CLI가 없는 라이브러리(P-2) — 모듈 소스에 `argparse`/`sys.argv`
+       접근·`input(` 호출이 부재함을 소스/AST 검사 테스트로 고정(금지 메커니즘이
+       **존재할 수 없는 표면**에 있다는 사실의 기계화).
+     - attestation 무효화 env: guard 자체 환경변수가 없음 — 모듈이
+       `os.environ`/`os.getenv`를 직접 읽지 않음(`environ`은 #23 resolver
+       전달뿐)을 소스/AST 검사 테스트로 고정.
+     - `unknown`→`read` 재분류 플래그: 공개 시그니처가 P-2 고정 집합 그대로임을
+       `inspect.signature` 정확 일치 테스트로 고정(우회 파라미터 추가 자체가
+       테스트 실패 — `open_readonly`/`open_test_readwrite`·`classify_batch`
+       전부). 세션 메서드에 재분류 인자 부재도 동일 단언.
+     - caller raw connection string: 인자는 profile 이름뿐이고 연결 값은 #23
+       resolver의 env 매핑에서만 나옴 — signature 테스트 + "연결 값은
+       `ResolvedProfile.connection_value` 경유로만 connector에 도달" 단언
+       (P-2: 주입 인자는 I/O 대체일 뿐 검사 우회 불가 — attestation이 어떤
+       경로로 들어온 값에도 동일 적용).
+     - raw cursor/connection 노출: 세션 private 속성(7단계 공개 표면 테스트) +
+       모듈 재수출 부재 테스트 + T-5 B2 정적 차단(3중).
+     우회로 부재 총칭 확인: 어떤 함수·플래그·env도 attestation/allowlist/차단을
+     무효화하지 않음 — `db_guard` 모듈이 driver·connector 심볼을 재수출하지
+     않음을 테스트로 고정.
 
 테스트(`test_db_guard.py`) — acceptance 13개 + failure 표 11행의 1:1 매트릭스(§6
 표 참조). fake connector는 probe 결과·질의 기록을 scriptable하게, env sentinel
@@ -704,7 +804,9 @@ class TestWriteSession:   # fetch_one / fetch_all / execute / close + context ma
 
 - 신규 상수(`validate_env_example_contract` 인근 관례):
   `BANNED_DRIVER_ROOTS = ("pyodbc", "pymssql", "psycopg", "psycopg2",
-  "sqlalchemy")`, `CONNECTORS_PACKAGE = "scripts.db.connectors"`,
+  "sqlalchemy", "asyncpg", "pg8000", "adodbapi")`(마지막 3종은 비동기 PG·
+  pure-Python PG·Windows ADO 경로 — 열거에서 빠지면 B1 자체가 우회로가 됨,
+  P-8), `CONNECTORS_PACKAGE = "scripts.db.connectors"`,
   `CONNECTORS_ALLOWED_IMPORTERS = ("scripts/db/db_guard.py",)` +
   `CONNECTORS_TEST_EXCEPTIONS = ("scripts/tests/test_db_connectors.py",)`(열거 —
   L353; 파일명·의도 추론 금지, 추가는 design change).
@@ -712,17 +814,38 @@ class TestWriteSession:   # fetch_one / fetch_all / execute / close + context ma
   list[str]`, `ast.walk` 기반(P-8):
   - B1: `scripts/**/*.py` 중 `scripts/db/connectors/**` 밖에서 `BANNED_DRIVER_ROOTS`
     의 import(`import X`/`from X import`/`from X.Y import` 전 형태).
-  - B2: `scripts/db/connectors` 패키지 import가 허용 importer(db_guard·connectors
+  - B2: `scripts.db.connectors` 패키지 import가 허용 importer(db_guard·connectors
     내부)·열거 테스트 예외 밖에서 발견됨(finding 9의 guard 우회 경로).
+    **상대 import 형태를 결정적으로 해석**한다 — `from . import connectors`,
+    `from .connectors import mssql`, `from ..db.connectors import x` 등
+    `level >= 1`의 `ImportFrom`은 해당 파일 위치 기준으로 절대 경로화하여
+    판정(문자열 `"scripts.db.connectors"` 등장만 검사하면 상대 형태가 전부
+    누락된다).
+  - B3: **동적 import 통로 차단** — `scripts/db/connectors/**`·열거 예외 밖의
+    `scripts/**/*.py`에서 `importlib` import/사용(`import_module` 등) 또는
+    `__import__` 내장 호출이 발견되면 위반. AST import 검사는 정적 import만
+    보므로 이 통로를 별도 금지하지 않으면 `importlib.import_module("pyodbc")`
+    한 줄로 B1이 무력화된다. 현재 `scripts/` 전체에서 `importlib`·`__import__`
+    사용 0건(본 세션 grep 확인)이고 connectors의 lazy import는 함수 내 일반
+    `import` 문으로 충분하므로 예외 열거 추가 없는 전면 금지가 결정적 규칙이다.
   - 진단 형식 `path:line [db-driver-boundary] message` 관례.
-- 배선: `main()` errors 통합에 1줄 추가(기존 검사·섹션 무변경 — #23 T-2와 동일
-  최소 확장). CI workflow 파일 무변경(`repo-guards`가 자동 승계).
+- 배선: `main()` errors 통합에 추가(기존 검사·섹션 무변경 — #23 T-2와 동일
+  최소 확장)하는 데 2건: (1) `validate_db_driver_boundary()` 상기 B1–B3;
+  (2) **T-1 `validate_target_metadata()`(M1–M4) 결과** — P-3에 따라
+  expected-target **값은 in-code로 커밋**되므로 모양 결함(prod/test 충돌 포함)은
+  CI에서 결정적으로 잡힌다(런타임 preflight T-4 4단계와 이중 방어: 사용자의
+  값 공급 실수가 merge 전에 발견된다). CI workflow 파일 무변경(`repo-guards`가
+  자동 승계).
 - 테스트(`test_db_driver_boundary.py`, `tmp_path` 합성 fixture 패턴): B1 양성
-  (합성 `scripts/foo.py`에 `import pyodbc`)·각 driver root·`from psycopg2
-  import connect` 형태, connectors 디렉터리 내부는 허용, B2 양성(합성 도구 파일의
-  `from scripts.db.connectors import mssql`)·허용 importer(db_guard)는 green·
-  열거 테스트 예외 green·예외 밖 테스트 파일은 위반, 실제 저장소 green(현 시점
-  무검출 상태 + T-4 완료 후에도 green).
+  (합성 `scripts/foo.py`에 `import pyodbc`)·각 driver root 8종(신규 3종 포함)·
+  `from psycopg2 import connect` 형태, connectors 디렉터리 내부는 허용, B2 양성
+  (합성 도구 파일의 `from scripts.db.connectors import mssql` **및 상대 형태**
+  `from .connectors import mssql`·`from . import connectors`)·허용
+  importer(db_guard)는 green·열거 테스트 예외 green·예외 밖 테스트 파일은
+  위반, B3 양성(합성 파일의 `import importlib`·`importlib.import_module(
+  "pyodbc")`·`__import__("pyodbc")` 각각 위반 — connectors 내부·열거 예외
+  파일은 green), 배선 (2) 양성(합성 targets 충돌 → validator errors 반영),
+  실제 저장소 green(현 시점 무검출 상태 + T-4 완료 후에도 green).
 
 ### T-I1 — 통합 검증
 
@@ -746,15 +869,18 @@ class TestWriteSession:   # fetch_one / fetch_all / execute / close + context ma
 review passes before treating it as mergeable"). 점검 초점:
 
 - (a) **분류기 우회 공격**(finding 1/2의 실증): 주석·문자열·식별자 quote·중첩·
-  대소문자·batch 구분자·`EXEC` 생략형·`SELECT INTO` 변형·CTE 혼합·GO — 리뷰어가
-  신규 변형을 직접 시도해 `read` 오인정·hazardous 누락 탐색. `unknown` 강등
-  경로 전수 확인(L194).
+  대소문자·batch 구분자·`EXEC` 생략형·`SELECT INTO` 변형(CTE 본문 포함)·
+  data-modifying CTE·구분자 없는 다중 문장·GO — 리뷰어가 신규 변형을 직접
+  시도해 `read` 오인정·hazardous 누락을 탐색. `unknown` 강등 경로 전수 확인
+  (L194; **test 쓰기 세션에서의 unknown 거부 포함** — P-5의 failure 표 9행
+  보수적 판독).
 - (b) **"checks the shape, not the substance" 계열**(PR #66/#67/#68 3연속 패턴):
-  T-5 경계 검사의 과소강제(예: `from pyodbc import connect` 형태 누락, 상대
-  import `from . import connectors`, `importlib.import_module("pyodbc")` 동적
-  import — B1이 `importlib` 경로를 못 잡으면 그 한계를 명시적 기록 또는
-  `importlib` import 자체 추가 검토), T-1 모양 검증의 우회(공백·유니코드 정규화
-  회피), T-4 audit 필드 누락·sentinel 변형.
+  T-5 경계 검사의 과소강제(신규 변형 탐색 — 상대 import 해석 누락, B3 우회
+  시도; B2/B3는 이제 결정적 검사이므로 리뷰어는 규칙 적용 오류가 아니라
+  **미열거 통로의 신규 발견**을 탐색), T-1 모양 검증의 우회(공백·유니코드
+  정규화 회피) **및 런타임 배선 누락**(T-4 4단계 전체 검증이 실제 open
+  경로에서 호출되는지 — 정의만 있고 안 쓰이면 이중 오구성 차단이 무력화됨),
+  T-4 audit 필드 누락·sentinel 변형.
 - (c) **비밀 누출 탐색**: audit 전 필드·오류 전 경로·`repr`/`str`/traceback에서
   연결 값·파라미터·row sentinel 부재(변형 sentinel 시도 포함).
 - (d) **capability 우회 탐색**: 세션 공개 속성·`__getattr__`·module 재수출·
@@ -778,7 +904,10 @@ review passes before treating it as mergeable"). 점검 초점:
   미해결 상태로 출하 — 실제 세션 개방은 사용자가 배포 사실을 공급할 때까지
   fail-closed 차단(의도된 상태, P-3), (2) 실제 MSSQL/PostgreSQL 연동 검증은
   승인된 테스트 인프라 확보 후 별도 수행(L421), (3) 소비 도구 배선은 각 이슈
-  범위(P-10).
+  범위(P-10), (4) **AC2의 server-enforced read-only production credential
+  provisioning은 사용자 배포 사실**이다(L95: guard는 쓰기 시도로 검증 금지 —
+  런타임 증명 불가) — expected-target 값과 함께 provision 사실 확인을 요청하고
+  회신을 기록한다(P-9).
 - Issue #20에 구현 코멘트(게이트 결과 요약 + acceptance 13개 매핑 + expected-target
   값 공급 요청 안내).
 - PR 개설 + 리뷰 코멘트 게시 후 **사용자의 명시적 merge 지시 대기**(2026-08-22
@@ -814,8 +943,10 @@ review passes before treating it as mergeable"). 점검 초점:
    않는다. 요구 자체가 발생하면 그것은 별도 운영 절차 설계 질문(L334).
 8. **#23 resolver API 부족 발견.** 신규 파라미터·속성 확장은 #23 설계 변경 —
    #23 게이트와 함께 재개방(#23 실행계획 트리거 5와 대칭).
-9. **경계 검사 예외 열거 확장 요구.** `CONNECTORS_TEST_EXCEPTIONS` 등 열거 추가는
-   design change(L353) — 리뷰에서만 정당화하지 않고 기록 후 승인.
+9. **경계 검사 예외·금지 목록 변경 요구.** `CONNECTORS_TEST_EXCEPTIONS` 등 열거
+   추가와 `BANNED_DRIVER_ROOTS`의 확장·축소는 전부 design change(L353 — 금지
+   목록은 "직접 driver import" 일반 계약의 구체화일 뿐) — 리뷰에서만
+   정당화하지 않고 기록 후 승인.
 10. **FastAPI `target/backend`에 대한 적용 범위 질문.** L355가 자동 적용을 명시
     제외 — 그 층의 정책은 별개 설계. 검사 범위를 `target/`로 확대하지 않는다.
 11. **audit 필드·redaction 규칙의 충돌 발견.** 예: sink 실패 의미론(L373)과 세션
@@ -835,15 +966,15 @@ review passes before treating it as mergeable"). 점검 초점:
 | 설계 완료 기준 (요지) | 담당 |
 |---|---|
 | 1. #23 resolver 소비, 두 번째 비밀/설정 경로 부재 (L394) | T-4 2단계(resolver 호출) + 게이트 5 비변경 목록 + T-R1/T-R2 (f) — `connection_profiles.py` 무변경 |
-| 2. 서버단 read-only 계정 문서화·과권한 prod credential 결함 취급 (L395) | P-9 — 런타임 코드 없음(L95 검증 금지). `.env.example` 주석·docs/12 지시 + T-4가 계정 권한과 무관하게 차단(L240)하는 테스트 |
-| 3. 모든 canonical profile에 명시적 expected server/database identity 메타데이터 (L396) | T-1 레지스트리(key 정합 테스트) + 미해결 값의 fail-closed(P-3) — 구조 존재와 값 공급 분리 |
+| 2. 서버단 read-only 계정 문서화·과권한 prod credential 결함 취급 (L395) | P-9 — 런타임 코드 없음(L95 검증 금지). docs/12 자체(L83–97)가 문서화 담당(`.env.example` 주석은 capability만 기술 — P-9 확인). **T-H1에서 provision 배포 사실 확인을 사용자에게 전달·수집** + T-4가 계정 권한과 무관하게 차단(L240)하는 테스트 |
+| 3. 모든 canonical profile에 명시적 expected server/database identity 메타데이터 (L396) | T-1 레지스트리(key 정합 테스트) + 미해결 값의 fail-closed(P-3) — 구조 존재와 값 공급 분리 + **open 경로 전체 검증 배선(T-4 4단계)·CI 배선(T-5)** |
 | 4. 모든 개방 세션이 사용 가능해지기 전 engine/server/database attestation (L397) | T-4 5–6단계 + 테스트(prod read도 attestation 필수 — L156 케이스 포함) |
 | 5. 쓰기 capability는 canonical test+read-write + 정확한 attestation 뒤에만 (L398) | T-4 3·6단계 + 테스트(불일치·미해결·prod 지목 전부 차단) |
 | 6. prod/read-only 세션에 범용 mutation 실행 API 부재 (L399) | T-4 `ReadOnlySession` 공개 표면(fetch만) + 공개 속성 부재 테스트 |
 | 7. 저장 프로시저 실행은 기본 위험·prod 도달 불가 (L400) | T-2 `procedure-exec` 매핑 + T-4 RO 차단 테스트(이름이 read-only처럼 보여도 — finding 6) |
 | 8. mutation/DDL/procedure/unknown/rollback 포장/위험 혼합 batch의 prod 불가 (L401) | T-2 batch 규칙 + T-4 차단 테스트(전 항목 개별 케이스) |
 | 9. 위험 실행의 pre-execution audit — 대상/profile/연산 identity 포함, 연결 값·비밀·파라미터·row 값 부재 (L402) | T-4 audit 이벤트 + sentinel 테스트(전 필드) |
-| 10. routine runtime override 부재 (L403) | T-4 API 표면(플래그·env 무효화 없음) + T-R1/T-R2 (d) |
+| 10. routine runtime override 부재 (L403) | T-4 10단계 — **금지 메커니즘 7종(L326–332) 각각의 구조적 방지 + 테스트**(CLI/프롬프트 부재 소스 단언, env 직접 읽기 부재, signature 고정, 연결 값 resolver 경유, raw 노출 3중 차단) + T-R1/T-R2 (d) |
 | 11. #18/#19/#21/#22가 공통 경계 소비 (L404) | **이후-소비 기준**(P-10) — 공개 API·경계 강제 제공으로 충족, 실제 배선은 각 이슈 완료 기준 |
 | 12. CI/동등한 결정적 검사가 무단 직접 driver/연결 사용 탐지 (L405) | T-5(B1/B2)가 `repo-guards` CI에서 상시 강제 |
 | 13. 테스트 13개 시나리오 (L406–419) | 아래 표 |
@@ -858,10 +989,10 @@ Acceptance 13 시나리오(L407–419) → 구체 테스트:
 | 13.4 | prod procedure 실행 차단 | test_db_guard |
 | 13.5 | 명시적 rollback transaction으로 포장해도 prod mutation 차단 | test_db_guard(T-2 batch 규칙과 결합) |
 | 13.6 | `mssql-test-rw` mutation은 정확한 test identity 일치 후에만 허용 | test_db_guard(허용·불일치 양쪽) |
-| 13.7 | test profile이 prod identity를 가리키면 차단 | test_db_guard(attestation mismatch) + T-1 M2(레지스트리 정적 충돌) |
+| 13.7 | test profile이 prod identity를 가리키면 차단 | test_db_guard(attestation mismatch) + T-1 M2(레지스트리 정적 충돌) + **이중 오구성 케이스**(레지스트리 test 값 = prod 값 ∧ env도 prod 연결 → attestation은 일치하나 T-4 4단계 전체 검증이 충돌로 차단 — L122 preflight 요구의 잔여 우측) |
 | 13.8 | source/target identity 충돌 차단 | T-1 M2/M3 + test_db_guard(쌍 일치 차단) |
 | 13.9 | missing/ambiguous target identity 차단 | test_db_guard(미해결 메타데이터) + T-1 2번 |
-| 13.10 | 혼합 read/write batch가 read로 강등되지 않음 | test_db_guard + test_db_sql_classification 3번 |
+| 13.10 | 혼합 read/write batch가 read로 강등되지 않음 | test_db_guard(RO 차단; TestWriteSession — **unknown 미포함 혼합 batch만 허용, unknown 포함은 test에서도 차단**, P-5 보수적 판독) + test_db_sql_classification 3번 |
 | 13.11 | 분류기 실패가 허용이 아니라 차단 | test_db_guard(monkeypatch로 분류기 예외 유발 → `classifier-failure` 차단) + T-2 unknown 케이스 |
 | 13.12 | audit 출력에 연결 값·자격증명·파라미터·row 값 부재 | test_db_guard(sentinel 단언 — env·params·rows) |
 | 13.13 | 통상 도구가 raw writable connection을 얻거나 사용해 guard를 우회할 수 없음 | test_db_guard(공개 속성·module 재수출 부재) + T-5 B2 + T-R1/T-R2 (d) |
@@ -871,14 +1002,14 @@ Failure behavior 표(L361–373) 11행 → 테스트:
 | 조건 | 결과 | 테스트 |
 |---|---|---|
 | unknown/non-canonical profile | block | test_db_guard(`resolution-failure`/`unknown-profile`) |
-| #23 해결 실패 | block | test_db_guard(env unset/empty → 래핑 오류) |
-| missing/ambiguous expected target | block | test_db_guard + T-1 |
-| 실제 engine/server/database 불일치 | block | test_db_guard(engine 불일치 포함) |
-| probe 실패 | block | test_db_guard(fake probe 예외/timeout) |
+| #23 해결 실패 | block | test_db_guard(env unset/empty/whitespace → 래핑 오류 + **`allowed_profiles` 전달 위반 케이스** — guard 도달 가능한 resolution 실패 유형 전부; unknown profile은 1행, write×RO는 6행) |
+| missing/ambiguous expected target | block | test_db_guard(미해결 값 + **모호(prod/test·test/test 쌍 일치) 케이스가 open 경로 전체 검증(T-4 4단계)에서 차단** — 정의만 있고 배선 안 된 상태를 리뷰가 못 잡으면 이중 오구성 뚫림) + T-1 |
+| 실제 engine/server/database 불일치 | block | test_db_guard(server·database 불일치 → `attestation-mismatch`; **engine 불일치는 방언 probe 실패로 구현**돼 `probe-failure`로 차단 — T-3 engine attestation 메커니즘 참조. 차단 자체가 요구이므로 reason enum 구분은 진단 정확성 문제) |
+| probe 실패 | block | test_db_guard(fake probe 예외/timeout + **결과 0행·NULL·빈 값·형태 이상 → `probe-failure`**, mismatch와 구분 — T-3 7번) |
 | 쓰기 요청이 canonical test+rw 아님 | block | test_db_guard(`open_test_readwrite("mssql-prod-ro")` → resolver+3단계 이중 차단) |
 | RO 세션의 위험 연산 | driver 실행 전 차단 | test_db_guard(호출 기록 0) |
 | prod에서 procedure 실행 | block | test_db_guard |
-| 혼합 batch | prod 차단 / test는 attested write 세션 필요 | test_db_guard 양쪽(RO 차단 + TestWriteSession 허용) |
+| 혼합 batch | prod 차단 / test는 attested write 세션 필요 | test_db_guard 양쪽(RO 차단; TestWriteSession — **unknown 미포함 혼합 batch만 허용, unknown 포함은 test 쓰기 세션에서도 차단** — P-5의 보수적 판독, 조건 열의 `unknown` 포함을 L188/L194/L372 기준으로 해석) |
 | 분류기 판단 불능 | block | test_db_guard(`classifier-failure`) + T-2 |
 | 위험 pre-audit 발행 불능 | 위험 실행 차단 | test_db_guard(sink 예외 → `audit-failure`, 실행 안 됨) |
 

@@ -847,7 +847,7 @@ def validate_env_example_contract(root: Path | None = None) -> list[str]:
                 continue
             if "=" in raw_line:
                 raw_key, rhs = raw_line.split("=", 1)
-                key = raw_key.strip()
+                key = raw_key
             else:
                 key = stripped
                 rhs = None
@@ -909,6 +909,25 @@ def validate_env_example_contract(root: Path | None = None) -> list[str]:
                     exception_line,
                     "!.env.example must appear after .env.*",
                 )
+
+        canonical_rules_are_valid = (
+            all(rule_lines[rule] for rule in GITIGNORE_ENV_RULES)
+            and exception_lines[-1] > wildcard_lines[-1]
+        )
+        if canonical_rules_are_valid:
+            for line_number, raw_line in enumerate(
+                gitignore_path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                normalized = raw_line.strip()
+                if not normalized.startswith("!") or normalized == "!.env.example":
+                    continue
+                pattern = normalized[1:].lstrip("/")
+                if any(part.startswith(".env") for part in pattern.split("/")):
+                    report(
+                        ".gitignore",
+                        line_number,
+                        f"protection-defeating env negation rule: {normalized}",
+                    )
 
     return errors
 

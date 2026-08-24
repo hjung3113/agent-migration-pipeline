@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Collection, Mapping
 
 ENGINE_MSSQL = "mssql"
@@ -29,17 +30,19 @@ class ConnectionProfile:
     capability: str
 
 
-PROFILES: Mapping[str, ConnectionProfile] = {
-    profile.name: profile
-    for profile in (
-        ConnectionProfile("mssql-prod-ro", "MSSQL_PROD_RO_CONN",
-                          ENGINE_MSSQL, ENVIRONMENT_PRODUCTION, CAPABILITY_READ_ONLY),
-        ConnectionProfile("mssql-test-rw", "MSSQL_TEST_RW_CONN",
-                          ENGINE_MSSQL, ENVIRONMENT_TEST, CAPABILITY_READ_WRITE),
-        ConnectionProfile("postgres-test-rw", "PG_TEST_RW_CONN",
-                          ENGINE_POSTGRESQL, ENVIRONMENT_TEST, CAPABILITY_READ_WRITE),
-    )
-}
+PROFILES: Mapping[str, ConnectionProfile] = MappingProxyType(
+    {
+        profile.name: profile
+        for profile in (
+            ConnectionProfile("mssql-prod-ro", "MSSQL_PROD_RO_CONN",
+                              ENGINE_MSSQL, ENVIRONMENT_PRODUCTION, CAPABILITY_READ_ONLY),
+            ConnectionProfile("mssql-test-rw", "MSSQL_TEST_RW_CONN",
+                              ENGINE_MSSQL, ENVIRONMENT_TEST, CAPABILITY_READ_WRITE),
+            ConnectionProfile("postgres-test-rw", "PG_TEST_RW_CONN",
+                              ENGINE_POSTGRESQL, ENVIRONMENT_TEST, CAPABILITY_READ_WRITE),
+        )
+    }
+)
 
 
 class ProfileResolutionError(Exception):
@@ -72,7 +75,7 @@ def resolve_connection_profile(
     if profile_name not in PROFILES:
         known_profiles = ", ".join(PROFILES)
         raise ProfileResolutionError(
-            f"unknown connection profile '{profile_name}'; known profiles: "
+            "unrecognized connection profile input; known profiles: "
             f"{known_profiles} (see docs/12-db-connection-secrets-contract.md)"
         )
 

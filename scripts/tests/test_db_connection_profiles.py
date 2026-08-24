@@ -7,6 +7,7 @@ import pytest
 from scripts.db.connection_profiles import (
     CAPABILITY_READ_ONLY,
     CAPABILITY_READ_WRITE,
+    ConnectionProfile,
     ENGINE_MSSQL,
     ENGINE_POSTGRESQL,
     ENVIRONMENT_PRODUCTION,
@@ -60,6 +61,27 @@ def test_registry_has_no_production_read_write_profile() -> None:
     )
 
 
+def test_profile_registry_is_runtime_immutable_and_rejects_injected_profile() -> None:
+    injected = ConnectionProfile(
+        "injected",
+        "INJECTED_CONN",
+        ENGINE_MSSQL,
+        ENVIRONMENT_TEST,
+        CAPABILITY_READ_WRITE,
+    )
+
+    with pytest.raises(TypeError):
+        PROFILES["injected"] = injected  # type: ignore[index]
+
+    with pytest.raises(ProfileResolutionError) as raised:
+        resolve_connection_profile(
+            "injected",
+            environ={"INJECTED_CONN": "injected-value"},
+        )
+
+    assert "unrecognized connection profile input" in str(raised.value)
+
+
 @pytest.mark.parametrize(
     ("profile_name", "operation", "env_var", "value"),
     [
@@ -90,10 +112,22 @@ def test_unknown_profile_fails_closed_with_known_profiles() -> None:
         resolve_connection_profile("unknown-profile", environ={})
 
     assert str(raised.value) == (
-        "unknown connection profile 'unknown-profile'; known profiles: "
+        "unrecognized connection profile input; known profiles: "
         "mssql-prod-ro, mssql-test-rw, postgres-test-rw (see "
         "docs/12-db-connection-secrets-contract.md)"
     )
+
+
+def test_unknown_profile_error_does_not_echo_raw_profile_input() -> None:
+    raw_input = "mssql://user:SUPER-SECRET@host.example:1433/db"
+
+    with pytest.raises(ProfileResolutionError) as raised:
+        resolve_connection_profile(raw_input, environ={})
+
+    rendered = str(raised.value)
+    assert raw_input not in rendered
+    assert "SUPER-SECRET" not in rendered
+    assert "known profiles: mssql-prod-ro, mssql-test-rw, postgres-test-rw" in rendered
 
 
 def test_unset_environment_variable_fails_closed_with_variable_name() -> None:

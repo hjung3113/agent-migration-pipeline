@@ -9,9 +9,18 @@ Last updated: 2026-08-24
 
 Issue #23's committed execution plan (`ed850f1`) was executed on
 `hjung3113/issue23-plan`. The implementation is in `2e5db0f`; the owner-level
-validator remediation is in `a26f47e`; the fresh-review fixes are in `19cf39f`.
-T-1 adds the exact three-profile resolver and canonical `.env.example`; T-2 adds the
-additive `validate_env_example_contract()` check and its `main()` wiring.
+validator remediation is in `a26f47e`; the first fresh-review fixes are in
+`19cf39f`; the current owner/bot review remediation is the follow-up change on
+this branch. T-1 adds the exact three-profile resolver and canonical
+`.env.example`; T-2 adds the additive `validate_env_example_contract()` check
+and its `main()` wiring.
+
+The current review remediation closes four additional findings: unknown-profile
+errors no longer echo caller input; `PROFILES` is runtime-immutable via
+`MappingProxyType`; `.gitignore` protection-defeating `.env*` negations are
+reported; and non-canonical whitespace around `.env.example` key tokens is
+rejected. Regression coverage covers each finding, including the existing
+empty-value duplicate-key and secret-safe `ResolvedProfile` repr contracts.
 
 The later DB tools consume the shared seam as:
 `from scripts.db.connection_profiles import resolve_connection_profile, PROFILES`.
@@ -21,12 +30,14 @@ their future consumer wiring, target identity/SQL guards, and database behavior.
 (legacy DLL configuration) remains OPEN and unchanged.
 
 Evidence at handoff: `python3 scripts/validate_scaffold.py` passed; `python3 -m pytest
-scripts/tests/ -q` passed 429 tests (404 baseline plus 25 parameterized cases); document
-link and OQ checks passed; `git check-ignore` returned 0 for `.env` and `.env.local` and
-1 for `.env.example`; `scripts/db/` has no driver/dotenv imports; PR #68 is OPEN. The
-fresh independent review's two findings are fixed: duplicate keys are rejected even
-when every RHS is empty, and `ResolvedProfile` repr/str omit `connection_value`. Merge
-remains pending the user's explicit instruction after PR review.
+scripts/tests/ -q` passed 434 tests (404 baseline plus 30 new/parameterized cases);
+document-link and OQ checks passed; `git check-ignore` returned 0 for `.env` and
+`.env.local` and 1 for `.env.example`; `scripts/db/` has no driver/dotenv imports; PR
+#68 is OPEN. The resolver consumer seam remains
+`from scripts.db.connection_profiles import resolve_connection_profile, PROFILES`.
+OQ-021 (legacy DLL configuration) remains OPEN and unchanged; #18/#20/#22 still own
+future consumer wiring and database behavior. Merge remains pending the user's
+explicit instruction after PR review.
 
 Owner review on PR #67 caught 2 more real gaps beyond the independent T-R1 review below —
 worth noting as a pattern for Track D: **freshly written validators in this repo keep

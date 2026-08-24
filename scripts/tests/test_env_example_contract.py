@@ -69,6 +69,32 @@ def test_extra_key_is_reported(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "malformed_key_line",
+    [
+        "MSSQL_PROD_RO_CONN =",
+        "  MSSQL_PROD_RO_CONN=",
+    ],
+)
+def test_canonical_key_token_must_not_have_surrounding_whitespace(
+    tmp_path: Path, malformed_key_line: str
+) -> None:
+    write_fixture(
+        tmp_path,
+        env_example=VALID_ENV_EXAMPLE.replace(
+            "MSSQL_PROD_RO_CONN=\n",
+            f"{malformed_key_line}\n",
+        ),
+    )
+
+    errors = validate_env_example_contract(tmp_path)
+
+    assert any(
+        "unexpected key:" in error and "MSSQL_PROD_RO_CONN" in error
+        for error in errors
+    )
+
+
+@pytest.mark.parametrize(
     "env_example",
     [
         VALID_ENV_EXAMPLE.replace(
@@ -139,6 +165,22 @@ def test_env_example_negation_rule_must_follow_wildcard_rule(tmp_path: Path) -> 
     errors = validate_env_example_contract(tmp_path)
 
     assert any("!.env.example must appear after .env.*" in error for error in errors)
+
+
+def test_env_negation_rule_that_unignores_secret_file_is_reported(
+    tmp_path: Path,
+) -> None:
+    write_fixture(
+        tmp_path,
+        gitignore=".env\n.env.*\n!.env.example\n!.env.local\n",
+    )
+
+    errors = validate_env_example_contract(tmp_path)
+
+    assert any(
+        "protection-defeating env negation rule: !.env.local" in error
+        for error in errors
+    )
 
 
 def test_comments_and_blank_lines_are_allowed(tmp_path: Path) -> None:

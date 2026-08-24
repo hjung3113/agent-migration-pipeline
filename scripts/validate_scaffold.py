@@ -856,6 +856,36 @@ SOURCE_TYPES = (
     "other",
 )
 VERIFICATION_RESULTS = ("PASS", "FAIL", "PARTIAL", "BLOCKED")
+JUDGE_SELF_CHECK_RESULTS = ("PASS", "FAIL", "BLOCKED")
+SELF_CHECK_MODES = ("executed", "reused")
+JUDGE_SELF_CHECK_FIELDS = (
+    "Effective judge configuration",
+    "Configuration fingerprint",
+    "Self-check mode",
+    "Reused self-check evidence ref",
+    "Safety/isolation note",
+    "Blocker",
+)
+JUDGE_SELF_CHECK_COLUMNS = (
+    "Control ID",
+    "Material rule/source",
+    "Injection boundary",
+    "Baseline",
+    "Known-wrong mutation",
+    "Expected detector(s)",
+    "Actual detector result(s)",
+    "Outcome",
+)
+REUSED_SELF_CHECK_EMPTY_SENTINELS = frozenset({"n/a", "none", "tbd", "-"})
+JUDGE_SELF_CHECK_REQUIRED_ROW_FIELDS = (
+    "Control ID",
+    "Material rule/source",
+    "Injection boundary",
+    "Baseline",
+    "Known-wrong mutation",
+    "Expected detector(s)",
+    "Actual detector result(s)",
+)
 OQ_STATUSES = ("OPEN", "CONFIRMED", "NOT-APPLICABLE", "DEFERRED")
 OQ_REGISTRY_PATH = "docs/05-open-questions.md"
 EVIDENCE_H1_RE = re.compile(r"^Evidence:\s*(.*)$")
@@ -908,9 +938,26 @@ def _split_row(line: str) -> list[str]:
     s = line.strip()
     if s.startswith("|"):
         s = s[1:]
-    if s.endswith("|"):
+    if s.endswith("|") and not s.endswith(r"\|"):
         s = s[:-1]
-    return [cell.strip() for cell in s.split("|")]
+
+    cells = []
+    current = []
+    index = 0
+    while index < len(s):
+        char = s[index]
+        if char == "\\" and index + 1 < len(s) and s[index + 1] == "|":
+            current.append("|")
+            index += 2
+            continue
+        if char == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    cells.append("".join(current).strip())
+    return cells
 
 
 def _is_separator_row(cells: list[str]) -> bool:
@@ -1171,6 +1218,205 @@ def validate_verification(path: Path, rel: str, errors: list[str]) -> None:
                 f"Result `{result[1]}`; expected PASS|FAIL|PARTIAL|BLOCKED",
             )
         )
+
+    self_check = seen.get("Judge self-check")
+    if self_check is None or not self_check[1]:
+        errors.append(
+            _err(
+                rel,
+                self_check[0] if self_check else 1,
+                "missing-field",
+                "verification report must contain a non-empty `Judge self-check` field",
+            )
+        )
+        self_check_value = ""
+    else:
+        self_check_value = self_check[1]
+        if self_check_value not in JUDGE_SELF_CHECK_RESULTS:
+            errors.append(
+                _err(
+                    rel,
+                    self_check[0],
+                    "invalid-enum",
+                    f"Judge self-check `{self_check_value}`; expected PASS|FAIL|BLOCKED",
+                )
+            )
+
+    result_value = result[1] if result else ""
+    if (
+        result_value in VERIFICATION_RESULTS
+        and result_value != "BLOCKED"
+        and self_check_value != "PASS"
+    ):
+        errors.append(
+            _err(
+                rel,
+                result[0],
+                "invalid-coupling",
+                f"Result `{result_value}` requires Judge self-check `PASS`; "
+                f"got `{self_check_value or '<missing>'}`",
+            )
+        )
+
+    judge_headings = [
+        (lineno, line)
+        for lineno, line in lines
+        if re.fullmatch(r"##\s+Judge self-check\s*", line)
+    ]
+    if len(judge_headings) != 1:
+        errors.append(
+            _err(
+                rel,
+                judge_headings[1][0] if len(judge_headings) > 1 else 1,
+                "section-count",
+                "verification report must contain exactly one `## Judge self-check` section",
+            )
+        )
+        judge_section: list[tuple[int, str]] = []
+    else:
+        judge_sections = [
+            section_lines
+            for title, section_lines in sections
+            if title == "judge self-check"
+        ]
+        if len(judge_sections) != 1:
+            errors.append(
+                _err(
+                    rel,
+                    judge_headings[0][0],
+                    "section-count",
+                    "verification report must contain exactly one `## Judge self-check` section",
+                )
+            )
+            judge_section = []
+        else:
+            judge_section = judge_sections[0]
+
+    self_check_fields, self_check_duplicates = _unique_fields(
+        _parse_kv(judge_section)
+    )
+    for lineno, key in self_check_duplicates:
+        errors.append(
+            _err(
+                rel,
+                lineno,
+                "duplicate-key",
+                f"duplicate field `{key}` in Judge self-check section",
+            )
+        )
+    for field in JUDGE_SELF_CHECK_FIELDS:
+        entry = self_check_fields.get(field)
+        if entry is None or not entry[1]:
+            errors.append(
+                _err(
+                    rel,
+                    entry[0] if entry else (judge_headings[0][0] if judge_headings else 1),
+                    "missing-field",
+                    f"Judge self-check must contain a non-empty `{field}` field",
+                )
+            )
+
+    mode_entry = self_check_fields.get("Self-check mode")
+    mode_value = mode_entry[1] if mode_entry else ""
+    if mode_value and mode_value not in SELF_CHECK_MODES:
+        errors.append(
+            _err(
+                rel,
+                mode_entry[0],
+                "invalid-enum",
+                f"Self-check mode `{mode_value}`; expected executed|reused",
+            )
+        )
+    reused_ref = self_check_fields.get("Reused self-check evidence ref")
+    reused_ref_value = reused_ref[1].strip().casefold() if reused_ref else ""
+    if mode_value == "reused" and (
+        reused_ref is None
+        or not reused_ref[1]
+        or reused_ref_value in REUSED_SELF_CHECK_EMPTY_SENTINELS
+    ):
+        errors.append(
+            _err(
+                rel,
+                reused_ref[0] if reused_ref else (judge_headings[0][0] if judge_headings else 1),
+                "missing-reference",
+                "reused self-check requires a non-empty, non-`N/A` `Reused self-check evidence ref`",
+            )
+        )
+
+    control_tables = list(_parse_tables(judge_section))
+    valid_control_tables = []
+    for table_lineno, headers, rows in control_tables:
+        if tuple(headers) != JUDGE_SELF_CHECK_COLUMNS:
+            errors.append(
+                _err(
+                    rel,
+                    table_lineno,
+                    "invalid-columns",
+                    "Judge self-check control table must use exactly these columns: "
+                    + " | ".join(JUDGE_SELF_CHECK_COLUMNS),
+                )
+            )
+            continue
+        valid_control_tables.append((headers, rows))
+
+    if not control_tables:
+        errors.append(
+            _err(
+                rel,
+                judge_headings[0][0] if judge_headings else 1,
+                "missing-table",
+                "Judge self-check section must contain its control table",
+            )
+        )
+
+    control_rows = [
+        (headers, row_lineno, cells)
+        for headers, rows in valid_control_tables
+        for row_lineno, cells in rows
+    ]
+    if mode_value != "reused" and not control_rows:
+        errors.append(
+            _err(
+                rel,
+                judge_headings[0][0] if judge_headings else 1,
+                "missing-row",
+                "Judge self-check control table must contain at least one row "
+                "when Self-check mode is not `reused`",
+            )
+        )
+
+    for headers, row_lineno, cells in control_rows:
+        for field in JUDGE_SELF_CHECK_REQUIRED_ROW_FIELDS:
+            if not (_cell(headers, cells, field) or "").strip():
+                errors.append(
+                    _err(
+                        rel,
+                        row_lineno,
+                        "missing-field",
+                        f"Judge self-check control row must contain a non-empty `{field}` cell",
+                    )
+                )
+        outcome = _cell(headers, cells, "Outcome") or ""
+        if outcome not in JUDGE_SELF_CHECK_RESULTS:
+            errors.append(
+                _err(
+                    rel,
+                    row_lineno,
+                    "invalid-enum",
+                    f"Outcome `{outcome}`; expected PASS|FAIL|BLOCKED",
+                )
+            )
+        if self_check_value == "PASS" and outcome != "PASS":
+            errors.append(
+                _err(
+                    rel,
+                    row_lineno,
+                    "invalid-coupling",
+                    f"Judge self-check `PASS` requires every control Outcome to be `PASS`; "
+                    f"got `{outcome}`",
+                )
+            )
+
     all_lines = header + [line for _, section in sections for line in section]
     for _header_lineno, headers, rows in _parse_tables(all_lines):
         if "Grade" not in headers:

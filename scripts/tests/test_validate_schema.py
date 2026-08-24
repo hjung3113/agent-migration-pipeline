@@ -38,6 +38,20 @@ VALID_CONTRACT = """# Behavior Contract: alpha
 VALID_VERIFICATION = """# Verification Report: alpha
 
 - Result: PASS
+- Judge self-check: PASS
+
+## Judge self-check
+
+- Effective judge configuration: composite judge with fixture inputs
+- Configuration fingerprint: fixture-v1
+- Self-check mode: executed
+- Reused self-check evidence ref: N/A
+- Safety/isolation note: isolated fixture values
+- Blocker: None
+
+| Control ID | Material rule/source | Injection boundary | Baseline | Known-wrong mutation | Expected detector(s) | Actual detector result(s) | Outcome |
+|---|---|---|---|---|---|---|---|
+| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |
 
 ## Evidence used
 
@@ -739,7 +753,7 @@ def test_verification_evidence_table_grade_cells_validated(tmp_path: Path) -> No
     add_feature(root, verification_text=report)
     errors = run_schema(root)
     assert errors == [
-        f"{FEATURES}/alpha/verification.md:9 [invalid-enum] "
+        f"{FEATURES}/alpha/verification.md:23 [invalid-enum] "
         "Grade `B+`; expected A|B|C|D|?"
     ]
 
@@ -755,6 +769,258 @@ def test_verification_duplicate_result_field_rejected(tmp_path: Path) -> None:
         f"{FEATURES}/alpha/verification.md:4 [duplicate-key] "
         "duplicate field `Result` in report header"
     ]
+
+
+@pytest.mark.parametrize(
+    ("result", "self_check"),
+    [
+        ("PASS", "FAIL"),
+        ("PASS", "BLOCKED"),
+        ("FAIL", "FAIL"),
+        ("PARTIAL", "BLOCKED"),
+    ],
+)
+def test_verification_result_requires_passing_judge_self_check(
+    tmp_path: Path, result: str, self_check: str
+) -> None:
+    report = VALID_VERIFICATION.replace("- Result: PASS", f"- Result: {result}")
+    report = report.replace("- Judge self-check: PASS", f"- Judge self-check: {self_check}")
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("[invalid-coupling]" in error for error in errors)
+
+
+@pytest.mark.parametrize("self_check", ["pass", "PARTIAL", "PASS*"])
+def test_verification_judge_self_check_result_domain(
+    tmp_path: Path, self_check: str
+) -> None:
+    report = VALID_VERIFICATION.replace(
+        "- Judge self-check: PASS", f"- Judge self-check: {self_check}"
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("[invalid-enum]" in error for error in errors)
+
+
+def test_verification_judge_self_check_fields_are_required(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace(
+        "- Configuration fingerprint: fixture-v1", "- Configuration fingerprint:"
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert errors == [
+        f"{FEATURES}/alpha/verification.md:9 [missing-field] "
+        "Judge self-check must contain a non-empty `Configuration fingerprint` field"
+    ]
+
+
+def test_verification_judge_self_check_header_field_is_required(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace("- Judge self-check: PASS\n", "", 1)
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any(
+        "verification report must contain a non-empty `Judge self-check` field" in error
+        for error in errors
+    )
+
+
+def test_verification_judge_self_check_section_is_required_once(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace("## Judge self-check\n", "", 1)
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("[section-count]" in error for error in errors)
+
+    duplicate = VALID_VERIFICATION.replace(
+        "## Judge self-check\n", "## Judge self-check\n\n## Judge self-check\n", 1
+    )
+    root = make_repo(tmp_path / "duplicate")
+    add_feature(root, verification_text=duplicate)
+    errors = run_schema(root)
+    assert any("[section-count]" in error for error in errors)
+
+
+def test_verification_reused_self_check_requires_evidence_ref(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace(
+        "- Self-check mode: executed", "- Self-check mode: reused"
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("[missing-reference]" in error for error in errors)
+
+
+@pytest.mark.parametrize("sentinel", ["n/a", "NONE", "tBd", "-"])
+def test_verification_reused_self_check_rejects_empty_sentinel_refs(
+    tmp_path: Path, sentinel: str
+) -> None:
+    report = VALID_VERIFICATION.replace(
+        "- Self-check mode: executed", "- Self-check mode: reused"
+    ).replace(
+        "- Reused self-check evidence ref: N/A",
+        f"- Reused self-check evidence ref: {sentinel}",
+    )
+    report = report.replace(
+        "| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |\n",
+        "",
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("[missing-reference]" in error for error in errors)
+
+
+def test_verification_reused_self_check_may_have_no_control_rows(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace(
+        "- Self-check mode: executed", "- Self-check mode: reused"
+    ).replace("- Reused self-check evidence ref: N/A", "- Reused self-check evidence ref: prior-report.md")
+    report = report.replace(
+        "| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |\n", ""
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    assert run_schema(root) == []
+
+
+def test_verification_missing_self_check_control_table_is_rejected(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace(
+        "| Control ID | Material rule/source | Injection boundary | Baseline | Known-wrong mutation | Expected detector(s) | Actual detector result(s) | Outcome |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |\n",
+        "",
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("[missing-table]" in error for error in errors)
+
+
+def test_verification_executed_self_check_requires_control_row(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace(
+        "| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |\n", ""
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("[missing-row]" in error for error in errors)
+
+
+def test_verification_self_check_mode_enum_is_validated(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace(
+        "- Self-check mode: executed", "- Self-check mode: unsupported"
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("Self-check mode `unsupported`" in error for error in errors)
+
+
+def test_verification_self_check_section_duplicate_field_is_rejected(
+    tmp_path: Path,
+) -> None:
+    report = VALID_VERIFICATION.replace(
+        "- Blocker: None", "- Blocker: None\n- Blocker: duplicate", 1
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any(
+        "duplicate field `Blocker` in Judge self-check section" in error
+        for error in errors
+    )
+
+
+def test_verification_control_row_requires_substantive_cells(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace(
+        "| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |",
+        "|  |  |  |  |  |  |  | PASS |",
+        1,
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    for field in (
+        "Control ID",
+        "Material rule/source",
+        "Injection boundary",
+        "Baseline",
+        "Known-wrong mutation",
+        "Expected detector(s)",
+        "Actual detector result(s)",
+    ):
+        assert any(f"non-empty `{field}` cell" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("field", "row"),
+    [
+        (
+            "Material rule/source",
+            "| JC-001 |  | fixture input | a+b | a+b! | contract-test | FAIL | PASS |",
+        ),
+        (
+            "Injection boundary",
+            "| JC-001 | BR-001 |  | a+b | a+b! | contract-test | FAIL | PASS |",
+        ),
+    ],
+)
+def test_verification_control_row_requires_material_source_and_injection_boundary(
+    tmp_path: Path, field: str, row: str
+) -> None:
+    report = VALID_VERIFICATION.replace(
+        "| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |",
+        row,
+        1,
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any(f"non-empty `{field}` cell" in error for error in errors)
+
+
+def test_verification_control_row_accepts_escaped_pipes_in_values(
+    tmp_path: Path,
+) -> None:
+    report = VALID_VERIFICATION.replace(
+        "| JC-001 | BR-001 | fixture input | a+b | a+b! | contract-test | FAIL | PASS |",
+        r"| JC-001 | BR-001 | fixture input | a\|b | a\|b! | contract-test | FAIL | PASS |",
+        1,
+    )
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    assert run_schema(root) == []
+
+
+def test_verification_control_table_columns_are_exact(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace("| Outcome |", "| Status |", 1)
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("[invalid-columns]" in error for error in errors)
+
+
+def test_verification_control_outcome_domain_and_pass_coupling(tmp_path: Path) -> None:
+    report = VALID_VERIFICATION.replace("| PASS |\n\n## Evidence used", "| MAYBE |\n\n## Evidence used", 1)
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    errors = run_schema(root)
+    assert any("Outcome `MAYBE`" in error for error in errors)
+    assert any("[invalid-coupling]" in error for error in errors)
+
+
+def test_verification_nonpassing_self_check_does_not_require_all_controls_pass(
+    tmp_path: Path,
+) -> None:
+    report = VALID_VERIFICATION.replace("- Result: PASS", "- Result: BLOCKED")
+    report = report.replace("- Judge self-check: PASS", "- Judge self-check: FAIL")
+    report = report.replace("| FAIL | PASS |", "| FAIL | FAIL |", 1)
+    root = make_repo(tmp_path)
+    add_feature(root, verification_text=report)
+    assert run_schema(root) == []
 
 
 # --- OQ registry ------------------------------------------------------------

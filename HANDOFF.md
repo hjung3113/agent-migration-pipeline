@@ -5,18 +5,28 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-24
 
-## Next session: Issue #11 merged (PR #67, `cb1505d`) — Track P complete; Track D starts at #23
+## Next session: Issue #23 implemented — Track D continues at #20
 
-**Track P is done.** `#1 -> #2 -> #14 -> (#7, #8) -> #5 -> #13 -> #6 -> #9 -> #11` all
-implemented, reviewed, and merged. Next work per `migration/ISSUES-PLAN-DRAFT.md` is
-Track D: `#23 -> #20 -> (#18, #22 core) -> #22 live adapter -> #21 (deferred)`, still
-separately gated and untouched. Before starting #23, redo the "구현 시작 전 체크" 7-item
-gate against current `main` (same process as every Track P issue this session), and
-reconfirm the design docs referenced from `docs/12-db-execution-safety-contract.md`
-(#20), `docs/issue-18-mssql-readonly-inspection.md` (#18), `docs/issue-22-db-snapshot-diff-contract.md`
-(#22) still match `main` — they were design-only merges (2026-08-18) and have not been
-re-checked against any of this session's or the #1-#14/#5-#13/#6/#9/#11 sessions' changes.
-Rule-13 Track P/D authorization remains in effect and has not been revoked.
+Issue #23's committed execution plan (`ed850f1`) was executed on
+`hjung3113/issue23-plan`. The implementation is in `2e5db0f`; the owner-level
+validator remediation is in `a26f47e` (current HEAD). T-1 adds the exact three-profile
+resolver and canonical `.env.example`; T-2 adds the additive `validate_env_example_contract()`
+check and its `main()` wiring.
+
+The later DB tools consume the shared seam as:
+`from scripts.db.connection_profiles import resolve_connection_profile, PROFILES`.
+No DB driver, connection code, dotenv loading, config-file path, raw connection-string
+CLI, fourth profile, or production read-write profile was added. #18/#20/#22 still own
+their future consumer wiring, target identity/SQL guards, and database behavior. OQ-021
+(legacy DLL configuration) remains OPEN and unchanged.
+
+Evidence at handoff: `python3 scripts/validate_scaffold.py` passed; `python3 -m pytest
+scripts/tests/ -q` passed 427 tests (404 baseline plus 23 parameterized cases); document
+link and OQ checks passed; `git check-ignore` returned 0 for `.env` and `.env.local` and
+1 for `.env.example`; `scripts/db/` has no driver/dotenv imports; the independent T-R1
+review found no standards findings and one duplicate-key validator gap, fixed in
+`a26f47e`, followed by a green owner second pass. Merge remains pending the user's
+explicit instruction after PR review.
 
 Owner review on PR #67 caught 2 more real gaps beyond the independent T-R1 review below —
 worth noting as a pattern for Track D: **freshly written validators in this repo keep

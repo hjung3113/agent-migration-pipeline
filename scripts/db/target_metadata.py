@@ -11,12 +11,20 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping
 
-from scripts.db.connection_profiles import (
-    ENVIRONMENT_PRODUCTION,
-    ENVIRONMENT_TEST,
-    PROFILES,
-    ConnectionProfile,
-)
+try:
+    from scripts.db.connection_profiles import (
+        ENVIRONMENT_PRODUCTION,
+        ENVIRONMENT_TEST,
+        PROFILES,
+        ConnectionProfile,
+    )
+except ModuleNotFoundError:  # direct ``python3 scripts/validate_scaffold.py``
+    from db.connection_profiles import (
+        ENVIRONMENT_PRODUCTION,
+        ENVIRONMENT_TEST,
+        PROFILES,
+        ConnectionProfile,
+    )
 
 
 @dataclass(frozen=True)

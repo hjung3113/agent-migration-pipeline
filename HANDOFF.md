@@ -3,16 +3,69 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-25
+Last updated: 2026-08-26
 
-## Next session: Issue #20 execution plan written + self-reviewed, awaiting user go-ahead to implement
+## Next session: Issue #20 implemented (T-1..T-I1), all gates green — needs T-R1/T-R2 independent reviews before PR
 
-**Issue #20 (DB execution safety guard — `docs/12-db-execution-safety-contract.md`) has an
-execution plan, gate-checked and adversarially strengthened, sitting unmerged on branch
-`hjung3113/issue20-plan` in worktree `/Users/hyojung/orca/workspaces/agent-migration-pipeline/issue20-plan`.
-No implementation has started. Next session: review the plan (or trust this session's
-strengthening pass), then either dispatch codex to implement T-0..T-I1, or send back for
-another opencode pass if more gaps are wanted first.**
+**Issue #20 (DB execution safety guard) is implemented and committed on branch
+`hjung3113/issue20-plan` in worktree `/Users/hyojung/orca/workspaces/agent-migration-pipeline/issue20-plan`,
+final commit `fa8f018`. Not reviewed, not PR'd, not merged. Next session: dispatch T-R1
+(first independent adversarial review — fresh subagent, phase-separated PR-body-then-diff
+pattern per `migration/ISSUE-20-EXECUTION-PLAN.md` §4/§6), fix findings, re-verify, then T-R2
+(second independent review — do not skip; this repo's own HANDOFF budgets **at least two**
+review passes for #20 specifically, the highest lock-in-risk item in Track D), then owner-level
+pass, then T-H1 (HANDOFF update + Issue comment + PR — open only, wait for explicit merge
+instruction).**
+
+Dispatched to codex (`gpt-5.6-luna`, `model_reasoning_effort=max`) via `orca-cli` in the
+existing worktree/branch, per user go-ahead this session (AskUserQuestion, "Yes, dispatch
+now"). Read `migration/ISSUE-20-EXECUTION-PLAN.md` in full before starting per instruction;
+worked ~32 minutes, committed incrementally per task (6 commits: T-2 classifier, T-1 target
+metadata, a direct-import fallback fix, T-3 connectors, T-5 driver-boundary validator, T-4
+guard — `ed44c56`/`dbdadcd`/`ac63006`/`afa003a`/`000afac`/`fa8f018`). Explicitly told **not**
+to do T-R1/T-R2/T-H1/PR/HANDOFF this dispatch — those are separate follow-up sessions per this
+repo's "independent reviewer must have no implementation-session context" rule (AGENTS.md
+rule 10, same as #6/#9/#11/#23).
+
+**T-I1 integration verification, independently re-run and confirmed (not just codex's
+self-report) in this session**: `python3 scripts/validate_scaffold.py` exit 0;
+`python3 -m pytest scripts/tests/ -q` — 597 passed (434 baseline + 163 new); `git diff
+main..HEAD --name-only` shows only the 12 new implementation/test files +
+`scripts/validate_scaffold.py` (additive) + `migration/ISSUE-20-EXECUTION-PLAN.md` (T-0,
+pre-existing) + `HANDOFF.md` itself — confirmed byte-unchanged for every non-scope path listed
+in the plan's gate 5 (`docs/12-*`, `scripts/db/connection_profiles.py`, `.env.example`,
+`.gitignore`, `target/backend`, CI workflow files, #18/#19/#21/#22). One real implementation
+snag surfaced and self-fixed mid-session: `scripts/db/target_metadata.py`'s import of
+`connection_profiles` assumed the `scripts.*` package path, which broke when
+`validate_scaffold.py` is run directly (`python3 scripts/validate_scaffold.py` rather than as
+a package) — fixed with a `try/except ModuleNotFoundError` fallback to a bare `db.*` import
+(commit `ac63006`), not flagged as a design-gate trigger since it's a launch-mode compat fix,
+not a lock-in decision.
+
+**New files** (all additive, no existing file's prior content touched other than the additive
+`validate_scaffold.py` extension): `scripts/db/target_metadata.py`,
+`scripts/db/sql_classification.py`, `scripts/db/connectors/{base,mssql,postgresql}.py`,
+`scripts/db/db_guard.py`, and matching `scripts/tests/test_db_{target_metadata,
+sql_classification,connectors,driver_boundary,guard}.py`. Public surface per the plan's P-1/P-2:
+`from scripts.db.db_guard import open_readonly, open_test_readwrite`.
+
+**Known, intentional, non-blocking state carried into review**: expected-target identity
+registry (`scripts/db/target_metadata.py`) ships fully unresolved (empty strings) — this is
+the plan's P-3 contract, not a defect; real values are a deployment fact the user supplies
+later (T-H1 will ask). Do not let a reviewer flag "registry is empty" as a bug — verify
+instead that unresolved entries correctly fail closed.
+
+**Review focus for T-R1/T-R2** (from the plan's §4 checklist, restated here so the next
+session doesn't have to re-derive it from the 1041-line plan): (a) classifier bypass attempts
+— CTE-body `SELECT INTO`, PG data-modifying CTEs, `GO`-only batch separators, unknown-in-batch
+never demoted to read even in test-write sessions; (b) "checks the shape, not the substance"
+pattern — this repo's 3-in-a-row recurring defect class (PR #66/#67/#68) — specifically
+whether T-4's full-registry preflight validation (P-3/T-4 step 4, the "both misconfigured"
+double-wrong-value case) is actually *called* on every session open, not just defined; (c)
+secret/value leakage across every audit field and error path; (d) capability-boundary escape
+attempts (private attribute access, module re-export, direct connector import bypassing
+`db_guard`). Full detail: `migration/ISSUE-20-EXECUTION-PLAN.md` §4 (T-R1/T-R2 task
+description) and §6 (acceptance-criteria/failure-table test mapping).
 
 User approved starting #20 this session (gate item 4, explicit go-ahead, not just the
 standing rule-13 Track P/D authorization — see prior session's `AskUserQuestion`). Built same
@@ -88,18 +141,17 @@ high --auto` in the same worktree/branch:
    - Both `validate_scaffold.py` / `check_doc_links.py` / `check_oq_updates.py` re-run green
      after the plan edit (plan-doc-only change, no code touched).
 
-**Before implementing, read `migration/ISSUE-20-EXECUTION-PLAN.md` on
-`hjung3113/issue20-plan` (not just this summary) — it is long (1041 lines) because the
-design doc it implements is unusually adversarial about its own failure modes, and the two
-planning passes deliberately traced every task to a specific design-doc line rather than
-paraphrasing.** This is Track D's highest lock-in-risk item (repo's own validation-scaling
-principle, reaffirmed in the prior HANDOFF entry) — do not compress T-R1/T-R2 into a single
-review round even under time pressure, and do not treat this session's self-review pass as a
-substitute for those two independent-of-implementer rounds (same "don't accept a self-check as
-the independent review" rule as #23's process note). The plan branch has not been merged, has
-no PR, and implementation has not started — next session should re-run the 7-item gate's item
-4 (explicit user approval) is already satisfied for *starting*, but confirm scope is still
-current before dispatching codex, since this doc will be edited if new gaps surface.
+**Before reviewing, read `migration/ISSUE-20-EXECUTION-PLAN.md` on
+`hjung3113/issue20-plan` in full (not just this summary) — it is long (1041 lines) because the
+design doc it implements is unusually adversarial about its own failure modes, and both the
+planning passes and the implementation trace every task to a specific design-doc line rather
+than paraphrasing.** This is Track D's highest lock-in-risk item (repo's own validation-scaling
+principle) — do not compress T-R1/T-R2 into a single review round even under time pressure,
+and do not treat codex's own T-I1 self-verification (re-confirmed independently this session,
+see above) as a substitute for the two independent-of-implementer review rounds still owed
+(same "don't accept a self-check as the independent review" rule as #23's process note). The
+implementation branch has not been merged and has no PR yet — next session dispatches T-R1
+(fresh subagent, no context from the implementation session).
 
 ## Historical: Issue #23 merged (PR #68, `2fd33c6`) — Track D continues at #20
 

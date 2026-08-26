@@ -119,7 +119,9 @@ def test_only_the_enumerated_connector_test_is_excepted(tmp_path: Path) -> None:
     [
         "import importlib\n",
         "import importlib\nimportlib.import_module('pyodbc')\n",
+        "def load(importlib):\n    return importlib.import_module('pyodbc')\n",
         "__import__('pyodbc')\n",
+        "import builtins\nbuiltins.__import__('pyodbc')\n",
     ],
 )
 def test_dynamic_import_paths_are_rejected(tmp_path: Path, content: str) -> None:

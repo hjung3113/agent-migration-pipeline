@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 from scripts.db.connection_profiles import ENGINE_POSTGRESQL
@@ -127,7 +126,7 @@ class PostgresqlConnector:
                 f"postgresql {field_name} identity probe returned invalid shape"
             )
         try:
-            if not isinstance(row, Sequence) or len(row) != 1:
+            if len(row) != 1:
                 raise ConnectorError(
                     f"postgresql {field_name} identity probe returned invalid shape"
                 )

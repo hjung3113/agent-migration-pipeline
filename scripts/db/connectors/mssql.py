@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 from scripts.db.connection_profiles import ENGINE_MSSQL
@@ -114,7 +113,7 @@ class MssqlConnector:
         if row is None or isinstance(row, (str, bytes)):
             raise ConnectorError(f"mssql {field_name} identity probe returned invalid shape")
         try:
-            if not isinstance(row, Sequence) or len(row) != 1:
+            if len(row) != 1:
                 raise ConnectorError(
                     f"mssql {field_name} identity probe returned invalid shape"
                 )

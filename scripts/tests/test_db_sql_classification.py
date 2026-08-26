@@ -104,6 +104,18 @@ def test_privileged_operations_are_privileged(sql: str) -> None:
 @pytest.mark.parametrize(
     "sql",
     [
+        "ALTER [SERVER] CONFIGURATION SET PROCESS AFFINITY CPU = 0",
+        "CREATE [ROLE] analyst",
+        "DROP \"USER\" analyst",
+    ],
+)
+def test_quoted_server_role_and_user_targets_remain_privileged(sql: str) -> None:
+    assert classify_statement(sql).operation_class == "privileged"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
         "SET NOCOUNT ON",
         "BEGIN TRANSACTION",
         "COMMIT",
@@ -203,6 +215,12 @@ def test_empty_or_comment_only_batch_is_unknown() -> None:
 def test_malformed_sql_is_unknown() -> None:
     assert classify_batch("SELECT 'unterminated").operation_class == "unknown"
     assert classify_batch("SELECT (1").operation_class == "unknown"
+
+
+def test_malformed_literal_is_still_masked_in_the_safe_preview() -> None:
+    result = classify_batch("SELECT 'SECRET-VALUE")
+    assert result.operation_class == "unknown"
+    assert "SECRET-VALUE" not in result.preview
 
 
 def test_redaction_removes_comments_and_masks_literals_and_numbers() -> None:

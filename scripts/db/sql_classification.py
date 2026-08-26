@@ -103,6 +103,20 @@ _UNKNOWN_STARTS = frozenset(
     }
 )
 _PRIVILEGED_TARGETS = frozenset({"SERVER", "ROLE", "LOGIN", "USER"})
+_FUNCTION_NAMES = frozenset(
+    {
+        "ABS",
+        "COALESCE",
+        "CONCAT",
+        "COUNT",
+        "CURRENT_DATABASE",
+        "DB_NAME",
+        "ISNULL",
+        "MAX",
+        "MIN",
+        "SUM",
+    }
+)
 _TIE_BREAK = {
     "mutation": 0,
     "ddl": 1,
@@ -262,7 +276,9 @@ def _consume_quoted(sql: str, start: int) -> tuple[_Token, int, bool]:
                 return _Token("literal", "?"), index, True
             return _Token("quoted", sql[start:index]), index, True
         index += 1
-    return _Token("quoted", sql[start:]), len(sql), False
+    if opener == "'":
+        return _Token("literal", "?"), len(sql), False
+    return _Token("quoted", "?"), len(sql), False
 
 
 def _consume_number(sql: str, start: int) -> int:
@@ -367,10 +383,10 @@ def _needs_space(previous: _Token | None, current: _Token) -> bool:
     if previous.value in {"(", ".", "::"}:
         return False
     if current.value == "(":
-        return previous.kind in {"word", "quoted"} and previous.value.upper() in {
-            "IN",
-            "VALUES",
-        }
+        return not (
+            previous.kind in {"word", "quoted"}
+            and previous.value.upper() in _FUNCTION_NAMES
+        )
     return True
 
 
@@ -547,9 +563,22 @@ def _next_word(tokens: Sequence[_Token], index: int) -> str | None:
     for token in tokens[index + 1 :]:
         if token.kind == "word":
             return token.value.upper()
+        if token.kind == "quoted":
+            identifier = _quoted_identifier(token.value)
+            if identifier is not None:
+                return identifier.upper()
+            return None
         if token.kind == "symbol" and token.value in {".", "[", "]"}:
             continue
         return None
+    return None
+
+
+def _quoted_identifier(value: str) -> str | None:
+    if value.startswith("[") and value.endswith("]"):
+        return value[1:-1].replace("]]", "]")
+    if value.startswith('"') and value.endswith('"'):
+        return value[1:-1].replace('""', '"')
     return None
 
 

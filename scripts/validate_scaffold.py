@@ -1082,7 +1082,14 @@ def _is_dynamic_import(node: ast.AST) -> bool:
         )
     if isinstance(node, ast.Call):
         function = node.func
-        return isinstance(function, ast.Name) and function.id == "__import__"
+        if isinstance(function, ast.Name):
+            return function.id == "__import__"
+        if isinstance(function, ast.Attribute):
+            return function.attr == "__import__" or (
+                isinstance(function.value, ast.Name)
+                and function.value.id == "importlib"
+            )
+        return False
     return False
 
 

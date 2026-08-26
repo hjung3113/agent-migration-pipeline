@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -14,6 +15,11 @@ except ModuleNotFoundError:  # direct ``python3 scripts/validate_scaffold.py``
     )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+try:
+    from scripts.db.target_metadata import validate_target_metadata
+except ModuleNotFoundError:  # direct ``python3 scripts/validate_scaffold.py``
+    from db.target_metadata import validate_target_metadata
 
 REQUIRED = [
     "README.md",
@@ -930,6 +936,154 @@ def validate_env_example_contract(root: Path | None = None) -> list[str]:
                     )
 
     return errors
+
+
+BANNED_DRIVER_ROOTS = (
+    "pyodbc",
+    "pymssql",
+    "psycopg",
+    "psycopg2",
+    "sqlalchemy",
+    "asyncpg",
+    "pg8000",
+    "adodbapi",
+)
+CONNECTORS_PACKAGE = "scripts.db.connectors"
+CONNECTORS_ALLOWED_IMPORTERS = ("scripts/db/db_guard.py",)
+CONNECTORS_TEST_EXCEPTIONS = ("scripts/tests/test_db_connectors.py",)
+
+
+def validate_db_driver_boundary(root: Path | None = None) -> list[str]:
+    """Reject direct driver and connector imports outside approved files."""
+    base = ROOT if root is None else root
+    scripts_root = base / "scripts"
+    if not scripts_root.is_dir():
+        return []
+
+    errors: list[str] = []
+    banned_roots = frozenset(BANNED_DRIVER_ROOTS)
+    allowed_importers = frozenset(CONNECTORS_ALLOWED_IMPORTERS)
+    test_exceptions = frozenset(CONNECTORS_TEST_EXCEPTIONS)
+
+    for path in sorted(scripts_root.rglob("*.py")):
+        relative = path.relative_to(base).as_posix()
+        in_connectors = _is_connector_path(relative)
+        connector_import_allowed = in_connectors or relative in allowed_importers or relative in test_exceptions
+        dynamic_import_allowed = in_connectors or relative in test_exceptions
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
+        except (OSError, SyntaxError) as exc:
+            line = getattr(exc, "lineno", 1) or 1
+            errors.append(
+                f"{relative}:{line} [db-driver-boundary] unable to parse Python source"
+            )
+            continue
+
+        for node in ast.walk(tree):
+            banned_driver = (
+                None
+                if in_connectors
+                else _banned_driver_import(node, banned_roots)
+            )
+            if banned_driver is not None:
+                errors.append(
+                    f"{relative}:{node.lineno} [db-driver-boundary] "
+                    f"direct database-driver import '{banned_driver}' is outside connectors"
+                )
+
+            if (
+                not connector_import_allowed
+                and _is_connectors_import(node, relative)
+            ):
+                errors.append(
+                    f"{relative}:{node.lineno} [db-driver-boundary] "
+                    "connector import is outside the approved boundary"
+                )
+
+            if not dynamic_import_allowed and _is_dynamic_import(node):
+                errors.append(
+                    f"{relative}:{node.lineno} [db-driver-boundary] "
+                    "dynamic import is outside the approved boundary"
+                )
+    return errors
+
+
+def _is_connector_path(relative: str) -> bool:
+    return relative == "scripts/db/connectors" or relative.startswith(
+        "scripts/db/connectors/"
+    )
+
+
+def _banned_driver_import(
+    node: ast.AST, banned_roots: frozenset[str]
+) -> str | None:
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            root = alias.name.split(".", 1)[0]
+            if root in banned_roots:
+                return root
+    if isinstance(node, ast.ImportFrom) and node.module:
+        root = node.module.split(".", 1)[0]
+        if root in banned_roots:
+            return root
+    return None
+
+
+def _module_package(relative: str) -> tuple[str, ...]:
+    parts = tuple(Path(relative).with_suffix("").parts)
+    return parts[:-1]
+
+
+def _relative_import_name(relative: str, node: ast.ImportFrom, alias: str) -> str:
+    package = _module_package(relative)
+    levels_up = node.level - 1
+    if levels_up >= len(package):
+        base: tuple[str, ...] = ()
+    else:
+        base = package[: len(package) - levels_up]
+    module_parts = tuple(node.module.split(".")) if node.module else ()
+    alias_parts = () if alias == "*" else (alias,)
+    return ".".join(base + module_parts + alias_parts)
+
+
+def _connectors_import_names(relative: str, node: ast.AST) -> tuple[str, ...]:
+    if isinstance(node, ast.Import):
+        return tuple(alias.name for alias in node.names)
+    if isinstance(node, ast.ImportFrom):
+        if node.level:
+            return tuple(
+                _relative_import_name(relative, node, alias.name)
+                for alias in node.names
+            )
+        module = node.module or ""
+        return tuple(
+            module if alias.name == "*" else f"{module}.{alias.name}".strip(".")
+            for alias in node.names
+        )
+    return ()
+
+
+def _is_connectors_import(node: ast.AST, relative: str) -> bool:
+    return any(
+        name == CONNECTORS_PACKAGE or name.startswith(f"{CONNECTORS_PACKAGE}.")
+        for name in _connectors_import_names(relative, node)
+    )
+
+
+def _is_dynamic_import(node: ast.AST) -> bool:
+    if isinstance(node, ast.Import):
+        return any(
+            alias.name == "importlib" or alias.name.startswith("importlib.")
+            for alias in node.names
+        )
+    if isinstance(node, ast.ImportFrom):
+        return bool(node.module) and (
+            node.module == "importlib" or node.module.startswith("importlib.")
+        )
+    if isinstance(node, ast.Call):
+        function = node.func
+        return isinstance(function, ast.Name) and function.id == "__import__"
+    return False
 
 
 # A-2 artifact schema/reference validation:
@@ -2727,6 +2881,8 @@ def main() -> None:
         + validate_skill_routing_contract()
         + validate_skill_execution_contract()
         + validate_env_example_contract()
+        + validate_db_driver_boundary()
+        + validate_target_metadata()
         + collect_validation_errors()
     )
     if errors:

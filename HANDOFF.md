@@ -3,9 +3,105 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-24
+Last updated: 2026-08-25
 
-## Next session: Issue #23 merged (PR #68, `2fd33c6`) — Track D continues at #20
+## Next session: Issue #20 execution plan written + self-reviewed, awaiting user go-ahead to implement
+
+**Issue #20 (DB execution safety guard — `docs/12-db-execution-safety-contract.md`) has an
+execution plan, gate-checked and adversarially strengthened, sitting unmerged on branch
+`hjung3113/issue20-plan` in worktree `/Users/hyojung/orca/workspaces/agent-migration-pipeline/issue20-plan`.
+No implementation has started. Next session: review the plan (or trust this session's
+strengthening pass), then either dispatch codex to implement T-0..T-I1, or send back for
+another opencode pass if more gaps are wanted first.**
+
+User approved starting #20 this session (gate item 4, explicit go-ahead, not just the
+standing rule-13 Track P/D authorization — see prior session's `AskUserQuestion`). Built same
+two-pass pattern as #23/#11's planning stage, both runs `zai-coding-plan/glm-5.3 --variant
+high --auto` in the same worktree/branch:
+
+1. **Gate check + execution plan** (commit `391c9c3`, 910 lines) — re-ran the ISSUES-PLAN-DRAFT
+   7-item gate for #20 against current `main` (`44949a5`, diff 0 against branch point). All 7
+   passed. Confirmed `docs/12-db-execution-safety-contract.md` byte-unchanged since merge
+   (`cf81318`) and read `scripts/db/connection_profiles.py` as it now stands (post-#23-review
+   shape: `MappingProxyType` registry, keyword-only params, no caller-input echo in errors) —
+   not the shape #23's own execution plan originally proposed. Explicitly adjudicated the
+   ISSUES-PLAN-DRAFT L102 flag ("#20 must not silently assume #19 materialization semantics"):
+   verdict is **no dependency** (dependency direction is #19→#20, not the reverse; #20's design
+   references #19 only for a documentation cross-reference, zero materialization concepts in
+   #20's own acceptance/failure criteria). Kept as an explicit §5 reopen-trigger if that
+   judgment breaks during implementation, not silently closed.
+   - DAG: `T-0 -> parallel-A (T-1 target_metadata / T-2 sql_classification / T-3 connectors /
+     T-5 CI import-boundary check, file-disjoint) -> T-4 db_guard -> T-I1 integration -> T-R1 +
+     T-R2 (two independent review rounds, per this repo's own HANDOFF-documented "budget at
+     least two rounds for #20" guidance) -> T-H1 handoff/PR (open only, wait for explicit merge
+     instruction)`.
+   - Key derived judgment calls (P-1..P-12, each traced to a specific design-doc line): public
+     capability API is `open_readonly`/`open_test_readwrite` -> `ReadOnlySession` (fetch-only) /
+     `TestWriteSession` (fetch + single guarded `execute`); expected-target identity metadata
+     ships as an **unresolved/empty in-repo registry that fails closed** rather than guessed
+     values (real values are a user-supplied deployment fact per design L386); the Layer 5
+     classifier is a conservative standard-library tokenizer with a read-allowlist and
+     deny-by-default `unknown` — explicitly not a SQL parser (design Non-goal); connectors use
+     lazy driver imports so the repo gains no hard dependency / dependency-manifest requirement
+     (precedent: PR #58 P2); audit events use literal-masking + a stable hash, and a sink
+     failure blocks hazardous execution rather than executing unaudited; the CI boundary check
+     is an AST scan wired into the existing `repo-guards` job, not a new job.
+2. **Adversarial self-review + strengthening pass** (commit `d13b978`, same branch, fresh
+   `opencode run`, not the implementation-independent T-R1/T-R2 reviews the plan itself
+   schedules for *after* code exists — this was a pre-implementation plan-quality pass,
+   explicitly framed around this repo's own recurring failure shape: "freshly written
+   plans/validators under-enforce their own stated requirements on the first pass" (PR
+   #66/#67/#68 pattern)). Checked the plan against 8 specific angles (all 13 acceptance
+   criteria mapped to real tasks, all 11 failure-table rows mapped to real tests, all 7
+   no-bypass mechanisms structurally covered not just asserted, classifier bypass resistance,
+   attestation failure-mode distinctions, CI check blind spots, judgment-call citation
+   accuracy, re-verifying the #19 non-dependency call). Found and fixed 8 real gaps directly in
+   the plan document (185 insertions / 54 deletions), most substantive:
+   - **Missing runtime preflight wiring** — T-1 defined the registry collision checks (test
+     identity == prod identity, etc.) but nothing in the original plan actually called them at
+     execution time, so the both-misconfigured case (registry test value accidentally equals
+     the prod value *and* the environment points at prod) would have passed attestation despite
+     design L122 requiring preflight to reject it. Fixed: T-4 step 4 now runs full-registry
+     validation on every session open; wired into T-5's CI check too; acceptance-criteria test
+     13.7 gained the both-wrong case.
+   - **Classifier bypasses in T-2**: the original design only checked `INTO` at top-level
+     statement depth, so a CTE-body `SELECT ... INTO` or a PostgreSQL data-modifying CTE
+     (`WITH d AS (DELETE ...) SELECT ...`) would misclassify as `read`; batch-splitting was
+     semicolon-only, so a separator-less blob (`SELECT 1 TRUNCATE TABLE t`) could also pass as
+     read. Fixed: hazardous-verb/`INTO` tokens are now checked at any nesting depth and floor
+     the statement's class regardless of server-side parse structure; `GO` added as a depth-0
+     batch separator; bypass regression tests added for both cases.
+   - Also fixed: the plan's "No bypass" section had asserted all 7 prohibited-bypass mechanisms
+     were prevented without specifying how — now each maps to a concrete structural prevention
+     + test. T-5's AST import-boundary scan had blind spots (`importlib.import_module(...)`
+     dynamic imports, unresolved relative-import forms, missing `asyncpg`/`pg8000`/`adodbapi`
+     from the banned-driver list) — all closed, current tree re-verified clean. Layer 3's probe
+     failure modes were under-specified (0-rows/NULL/wrong-shape response was conflated with an
+     identity mismatch instead of being its own distinct `probe-failure` block reason). One
+     judgment call (P-9) cited `.env.example` as documenting the server-enforced read-only
+     production credential — it doesn't; that's a real deployment fact the user must supply,
+     now explicitly flagged for T-H1 to carry forward rather than silently assumed. Several
+     citation/row-mapping fixes (wrong reopen-trigger number, three failure-table rows and five
+     acceptance-criteria rows tightened for exact wording). Re-verified the #19 no-dependency
+     conclusion independently against `docs/issue-19-mssql-test-materialization.md` — still
+     holds, with one soft cross-reference edge now noted explicitly rather than glossed over.
+   - Both `validate_scaffold.py` / `check_doc_links.py` / `check_oq_updates.py` re-run green
+     after the plan edit (plan-doc-only change, no code touched).
+
+**Before implementing, read `migration/ISSUE-20-EXECUTION-PLAN.md` on
+`hjung3113/issue20-plan` (not just this summary) — it is long (1041 lines) because the
+design doc it implements is unusually adversarial about its own failure modes, and the two
+planning passes deliberately traced every task to a specific design-doc line rather than
+paraphrasing.** This is Track D's highest lock-in-risk item (repo's own validation-scaling
+principle, reaffirmed in the prior HANDOFF entry) — do not compress T-R1/T-R2 into a single
+review round even under time pressure, and do not treat this session's self-review pass as a
+substitute for those two independent-of-implementer rounds (same "don't accept a self-check as
+the independent review" rule as #23's process note). The plan branch has not been merged, has
+no PR, and implementation has not started — next session should re-run the 7-item gate's item
+4 (explicit user approval) is already satisfied for *starting*, but confirm scope is still
+current before dispatching codex, since this doc will be edited if new gaps surface.
+
+## Historical: Issue #23 merged (PR #68, `2fd33c6`) — Track D continues at #20
 
 **Issue #23 (DB connection profile resolver + secret injection contract) is
 merged to `main`.** Track D order per `migration/ISSUES-PLAN-DRAFT.md` is

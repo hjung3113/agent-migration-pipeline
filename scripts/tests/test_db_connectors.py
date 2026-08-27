@@ -149,16 +149,17 @@ def test_mssql_probe_uses_server_and_database_identity_queries() -> None:
     ]
 
 
-def test_postgresql_connect_and_probe_use_database_query_and_server_address() -> None:
+def test_postgresql_connect_and_probe_use_server_reported_address_and_port() -> None:
     from scripts.db.connectors.postgresql import PostgresqlConnector
 
     connection = FakeConnection(
         rows={
             "SELECT current_database()": [("application_test",)],
             "SELECT inet_server_addr()": [("10.20.30.40",)],
+            "SELECT inet_server_port()": [(5433,)],
         },
         host="postgres.example",
-        port=5433,
+        port=9999,
     )
     driver = FakeDriver(connection)
     connector = PostgresqlConnector()
@@ -172,6 +173,7 @@ def test_postgresql_connect_and_probe_use_database_query_and_server_address() ->
     assert [call[0] for cursor in connection.cursors for call in cursor.executed] == [
         "SELECT current_database()",
         "SELECT inet_server_addr()",
+        "SELECT inet_server_port()",
     ]
 
 
@@ -180,6 +182,7 @@ def test_every_identity_probe_query_is_classified_as_read() -> None:
     assert classify_batch("SELECT DB_NAME()").operation_class == "read"
     assert classify_batch("SELECT current_database()").operation_class == "read"
     assert classify_batch("SELECT inet_server_addr()").operation_class == "read"
+    assert classify_batch("SELECT inet_server_port()").operation_class == "read"
 
 
 def test_execute_passes_parameters_without_interpolation_and_returns_rowcount() -> None:

@@ -1103,11 +1103,15 @@ def _db_guard_aliases(relative: str, tree: ast.AST) -> frozenset[str]:
                     if alias.asname:
                         aliases.add(alias.asname)
         elif isinstance(node, ast.ImportFrom):
-            if _import_from_module_name(relative, node) != "scripts.db":
-                continue
-            for alias in node.names:
-                if alias.name == "db_guard":
-                    aliases.add(alias.asname or alias.name)
+            module_name = _import_from_module_name(relative, node)
+            if module_name == "scripts.db":
+                for alias in node.names:
+                    if alias.name == "db_guard":
+                        aliases.add(alias.asname or alias.name)
+            elif module_name == "scripts":
+                for alias in node.names:
+                    if alias.name == "db":
+                        aliases.add(f"{alias.asname or alias.name}.db_guard")
     return frozenset(aliases)
 
 

@@ -74,6 +74,7 @@ def get_expected_target(
             not isinstance(value, str)
             or not value.strip()
             or _contains_zero_width_character(value)
+            or _contains_invalid_identity_character(value)
         ):
             raise TargetMetadataError(
                 f"missing target metadata for profile '{profile_name}': {field_name}"
@@ -120,6 +121,11 @@ def validate_target_metadata(
             elif _contains_zero_width_character(value):
                 errors.append(
                     f"{field_name} contains zero-width characters for profile: "
+                    f"{profile_name}"
+                )
+            elif _contains_invalid_identity_character(value):
+                errors.append(
+                    f"{field_name} contains unsupported characters for profile: "
                     f"{profile_name}"
                 )
 
@@ -184,3 +190,8 @@ def _collision_pair(target: ExpectedTarget) -> tuple[str, str]:
 
 def _contains_zero_width_character(value: str) -> bool:
     return any(character in _ZERO_WIDTH_CHARACTERS for character in value)
+
+
+def _contains_invalid_identity_character(value: str) -> bool:
+    """Keep registry identities to printable, non-whitespace ASCII values."""
+    return any(not 0x21 <= ord(character) <= 0x7E for character in value)

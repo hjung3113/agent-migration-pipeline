@@ -133,6 +133,7 @@ def test_validate_target_metadata_ignores_same_pair_across_different_engines() -
     [
         ("server_identity", ExpectedTarget(" prod-sql ", "app")),
         ("database_identity", ExpectedTarget("prod-sql", " app ")),
+        ("server_identity", ExpectedTarget("prod\u00a0sql", "app")),
     ],
 )
 def test_validate_target_metadata_reports_identity_whitespace(

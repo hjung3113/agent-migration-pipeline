@@ -121,6 +121,7 @@ def test_db_guard_imports_declared_in_all_are_allowed(tmp_path: Path) -> None:
     [
         "import scripts.db.db_guard\nscripts.db.db_guard._MssqlConnector\n",
         "import scripts.db.db_guard as db_guard\ndb_guard._MssqlConnector\n",
+        "from scripts import db\ndb.db_guard._MssqlConnector\n",
     ],
 )
 def test_private_db_guard_attribute_is_rejected(

@@ -47,15 +47,12 @@ class PostgresqlConnector:
             self.fetch_one(connection, "SELECT inet_server_addr()"),
             "server",
         )
-        port = self._connection_attribute(connection, "port")
-        if port is None:
-            raise ConnectorError("postgresql connection identity is unavailable")
-        port_text = str(port).strip()
-        if not port_text:
-            raise ConnectorError("postgresql connection identity is unavailable")
+        port = self._probe_port(
+            self.fetch_one(connection, "SELECT inet_server_port()"),
+        )
         return AttestedIdentity(
             engine=ENGINE_POSTGRESQL,
-            server_identity=f"{host.strip()}:{port_text}",
+            server_identity=f"{host.strip()}:{port}",
             database_identity=database,
         )
 
@@ -94,14 +91,6 @@ class PostgresqlConnector:
             connection.close()
         except Exception as exc:
             raise ConnectorError("postgresql connection close failed") from exc
-
-    @staticmethod
-    def _connection_attribute(connection: Any, name: str) -> Any:
-        value = getattr(connection, name, None)
-        if value is not None:
-            return value
-        info = getattr(connection, "info", None)
-        return getattr(info, name, None)
 
     @staticmethod
     def _cursor(connection: Any, operation: str) -> Any:
@@ -147,6 +136,45 @@ class PostgresqlConnector:
                 f"postgresql {field_name} identity probe returned invalid value"
             )
         return value
+
+    @staticmethod
+    def _probe_port(row: Any) -> str:
+        if row is None or isinstance(row, (str, bytes)):
+            raise ConnectorError(
+                "postgresql port identity probe returned invalid shape"
+            )
+        try:
+            if len(row) != 1:
+                raise ConnectorError(
+                    "postgresql port identity probe returned invalid shape"
+                )
+            value = row[0]
+        except ConnectorError:
+            raise
+        except Exception as exc:
+            raise ConnectorError(
+                "postgresql port identity probe returned invalid shape"
+            ) from exc
+
+        if isinstance(value, bool):
+            raise ConnectorError(
+                "postgresql port identity probe returned invalid value"
+            )
+        if isinstance(value, int):
+            port = value
+        elif isinstance(value, str) and value and all(
+            "0" <= character <= "9" for character in value
+        ):
+            port = int(value)
+        else:
+            raise ConnectorError(
+                "postgresql port identity probe returned invalid value"
+            )
+        if not 1 <= port <= 65535:
+            raise ConnectorError(
+                "postgresql port identity probe returned invalid value"
+            )
+        return str(port)
 
 
 PostgreSQLConnector = PostgresqlConnector

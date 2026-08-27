@@ -35,7 +35,7 @@ from scripts.db.sql_classification import (
     classify_batch,
 )
 from scripts.db.target_metadata import (
-    EXPECTED_TARGETS,
+    EXPECTED_TARGETS as _EXPECTED_TARGETS,
     ExpectedTarget,
     get_expected_target,
     validate_target_metadata,
@@ -90,9 +90,7 @@ def open_readonly(
     *,
     tool_id: str,
     allowed_profiles: Collection[str] | None = None,
-    environ: Mapping[str, str] | None = None,
     connector_overrides: Mapping[str, Any] | None = None,
-    metadata: Mapping[str, ExpectedTarget] | None = None,
     audit_sink: Callable[[str], None] | None = None,
 ) -> ReadOnlySession:
     """Open an attested read-only capability for a canonical profile."""
@@ -100,9 +98,7 @@ def open_readonly(
         profile_name,
         tool_id=tool_id,
         allowed_profiles=allowed_profiles,
-        environ=environ,
         connector_overrides=connector_overrides,
-        metadata=metadata,
         audit_sink=audit_sink,
         writable=False,
     )
@@ -113,9 +109,7 @@ def open_test_readwrite(
     *,
     tool_id: str,
     allowed_profiles: Collection[str] | None = None,
-    environ: Mapping[str, str] | None = None,
     connector_overrides: Mapping[str, Any] | None = None,
-    metadata: Mapping[str, ExpectedTarget] | None = None,
     audit_sink: Callable[[str], None] | None = None,
 ) -> TestWriteSession:
     """Open an attested test read-write capability."""
@@ -123,9 +117,7 @@ def open_test_readwrite(
         profile_name,
         tool_id=tool_id,
         allowed_profiles=allowed_profiles,
-        environ=environ,
         connector_overrides=connector_overrides,
-        metadata=metadata,
         audit_sink=audit_sink,
         writable=True,
     )
@@ -136,9 +128,7 @@ def _open_session(
     *,
     tool_id: str,
     allowed_profiles: Collection[str] | None,
-    environ: Mapping[str, str] | None,
     connector_overrides: Mapping[str, Any] | None,
-    metadata: Mapping[str, ExpectedTarget] | None,
     audit_sink: Callable[[str], None] | None,
     writable: bool,
 ) -> ReadOnlySession | TestWriteSession:
@@ -155,7 +145,6 @@ def _open_session(
                 profile_name,
                 allowed_profiles=allowed_profiles,
                 operation=operation,
-                environ=environ,
             )
         except Exception:
             reason = (
@@ -177,16 +166,18 @@ def _open_session(
                 "write capability requires a canonical test read-write profile",
             )
 
-        target_map = EXPECTED_TARGETS if metadata is None else metadata
         try:
-            if validate_target_metadata(profiles=PROFILES, targets=target_map):
+            if validate_target_metadata(
+                profiles=PROFILES,
+                targets=_EXPECTED_TARGETS,
+            ):
                 raise GuardBlockedError(
                     "missing-target-metadata",
                     "expected target metadata is invalid",
                 )
             expected_target = get_expected_target(
                 profile.name,
-                targets=target_map,
+                targets=_EXPECTED_TARGETS,
             )
         except Exception:
             raise GuardBlockedError(

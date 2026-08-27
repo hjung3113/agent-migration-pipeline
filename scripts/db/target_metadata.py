@@ -128,7 +128,7 @@ def validate_target_metadata(
                 )
 
     production_pairs = {
-        (target.server_identity, target.database_identity): profile_name
+        _collision_pair(target): profile_name
         for profile_name, target in usable.items()
         if profiles[profile_name].environment == ENVIRONMENT_PRODUCTION
     }
@@ -138,7 +138,7 @@ def validate_target_metadata(
         if profiles[profile_name].environment == ENVIRONMENT_TEST
     ]
     for profile_name, target in test_profiles:
-        pair = (target.server_identity, target.database_identity)
+        pair = _collision_pair(target)
         production_name = production_pairs.get(pair)
         if production_name is not None:
             errors.append(
@@ -150,7 +150,7 @@ def validate_target_metadata(
     for profile_name, target in usable.items():
         profile = profiles[profile_name]
         pair_groups.setdefault(
-            (profile.engine, target.server_identity, target.database_identity),
+            (profile.engine, *_collision_pair(target)),
             [],
         ).append(profile_name)
     for (engine, _server, _database), names in sorted(pair_groups.items()):
@@ -161,3 +161,8 @@ def validate_target_metadata(
             )
 
     return errors
+
+
+def _collision_pair(target: ExpectedTarget) -> tuple[str, str]:
+    """Normalize identity only for registry-to-registry collision checks."""
+    return target.server_identity.casefold(), target.database_identity.casefold()

@@ -88,6 +88,19 @@ def test_validate_target_metadata_reports_test_target_equal_to_production() -> N
     assert any("production" in error and "mssql-test-rw" in error for error in errors)
 
 
+def test_validate_target_metadata_reports_case_variant_production_collision() -> None:
+    targets = _resolved_targets()
+    targets["mssql-test-rw"] = ExpectedTarget("PROD-SQL", "APP")
+    errors = validate_target_metadata(profiles=PROFILES, targets=targets)
+
+    assert any(
+        "production" in error
+        and "mssql-test-rw" in error
+        and "mssql-prod-ro" in error
+        for error in errors
+    )
+
+
 def test_validate_target_metadata_reports_same_engine_profile_pair_collision() -> None:
     targets = _resolved_targets()
     targets["postgres-test-rw"] = ExpectedTarget("test-sql", "app_test")

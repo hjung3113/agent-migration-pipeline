@@ -951,6 +951,14 @@ BANNED_DRIVER_ROOTS = (
 CONNECTORS_PACKAGE = "scripts.db.connectors"
 CONNECTORS_ALLOWED_IMPORTERS = ("scripts/db/db_guard.py",)
 CONNECTORS_TEST_EXCEPTIONS = ("scripts/tests/test_db_connectors.py",)
+DB_GUARD_PACKAGE = "scripts.db.db_guard"
+DB_GUARD_PUBLIC_NAMES = (
+    "GuardBlockedError",
+    "ReadOnlySession",
+    "TestWriteSession",
+    "open_readonly",
+    "open_test_readwrite",
+)
 
 
 def validate_db_driver_boundary(root: Path | None = None) -> list[str]:
@@ -979,6 +987,8 @@ def validate_db_driver_boundary(root: Path | None = None) -> list[str]:
             )
             continue
 
+        db_guard_public_names = _db_guard_public_names(base)
+        db_guard_aliases = _db_guard_aliases(relative, tree)
         for node in ast.walk(tree):
             banned_driver = (
                 None
@@ -1005,6 +1015,30 @@ def validate_db_driver_boundary(root: Path | None = None) -> list[str]:
                     f"{relative}:{node.lineno} [db-driver-boundary] "
                     "dynamic import is outside the approved boundary"
                 )
+
+            private_db_guard_name = _non_public_db_guard_import(
+                node,
+                relative,
+                db_guard_public_names,
+            )
+            if private_db_guard_name is not None:
+                errors.append(
+                    f"{relative}:{node.lineno} [db-driver-boundary] "
+                    "non-public db_guard import "
+                    f"'{private_db_guard_name}' is outside the public API"
+                )
+
+            private_db_guard_name = _non_public_db_guard_attribute(
+                node,
+                db_guard_aliases,
+                db_guard_public_names,
+            )
+            if private_db_guard_name is not None:
+                errors.append(
+                    f"{relative}:{node.lineno} [db-driver-boundary] "
+                    "non-public db_guard attribute "
+                    f"'{private_db_guard_name}' is outside the public API"
+                )
     return errors
 
 
@@ -1012,6 +1046,108 @@ def _is_connector_path(relative: str) -> bool:
     return relative == "scripts/db/connectors" or relative.startswith(
         "scripts/db/connectors/"
     )
+
+
+def _db_guard_public_names(base: Path) -> frozenset[str]:
+    fallback = frozenset(DB_GUARD_PUBLIC_NAMES)
+    path = base / "scripts/db/db_guard.py"
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError):
+        return fallback
+
+    for node in tree.body:
+        value: ast.AST | None = None
+        if isinstance(node, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            ):
+                value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == "__all__":
+                value = node.value
+        if value is None:
+            continue
+        try:
+            names = ast.literal_eval(value)
+        except (ValueError, TypeError):
+            return fallback
+        if isinstance(names, (list, tuple)) and all(
+            isinstance(name, str) for name in names
+        ):
+            return frozenset(names)
+        return fallback
+    return fallback
+
+
+def _import_from_module_name(relative: str, node: ast.ImportFrom) -> str:
+    if not node.level:
+        return node.module or ""
+    package = _module_package(relative)
+    levels_up = node.level - 1
+    if levels_up >= len(package):
+        base: tuple[str, ...] = ()
+    else:
+        base = package[: len(package) - levels_up]
+    module_parts = tuple(node.module.split(".")) if node.module else ()
+    return ".".join(base + module_parts)
+
+
+def _db_guard_aliases(relative: str, tree: ast.AST) -> frozenset[str]:
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == DB_GUARD_PACKAGE:
+                    if alias.asname:
+                        aliases.add(alias.asname)
+        elif isinstance(node, ast.ImportFrom):
+            if _import_from_module_name(relative, node) != "scripts.db":
+                continue
+            for alias in node.names:
+                if alias.name == "db_guard":
+                    aliases.add(alias.asname or alias.name)
+    return frozenset(aliases)
+
+
+def _non_public_db_guard_import(
+    node: ast.AST,
+    relative: str,
+    public_names: frozenset[str],
+) -> str | None:
+    if not isinstance(node, ast.ImportFrom):
+        return None
+    if _import_from_module_name(relative, node) != DB_GUARD_PACKAGE:
+        return None
+    for alias in node.names:
+        if alias.name != "*" and alias.name not in public_names:
+            return alias.name
+    return None
+
+
+def _dotted_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _dotted_name(node.value)
+        return None if parent is None else f"{parent}.{node.attr}"
+    return None
+
+
+def _non_public_db_guard_attribute(
+    node: ast.AST,
+    aliases: frozenset[str],
+    public_names: frozenset[str],
+) -> str | None:
+    if not isinstance(node, ast.Attribute):
+        return None
+    parent = _dotted_name(node.value)
+    if parent != DB_GUARD_PACKAGE and parent not in aliases:
+        return None
+    if node.attr == "__all__" or node.attr in public_names:
+        return None
+    return node.attr
 
 
 def _banned_driver_import(
@@ -1034,28 +1170,11 @@ def _module_package(relative: str) -> tuple[str, ...]:
     return parts[:-1]
 
 
-def _relative_import_name(relative: str, node: ast.ImportFrom, alias: str) -> str:
-    package = _module_package(relative)
-    levels_up = node.level - 1
-    if levels_up >= len(package):
-        base: tuple[str, ...] = ()
-    else:
-        base = package[: len(package) - levels_up]
-    module_parts = tuple(node.module.split(".")) if node.module else ()
-    alias_parts = () if alias == "*" else (alias,)
-    return ".".join(base + module_parts + alias_parts)
-
-
 def _connectors_import_names(relative: str, node: ast.AST) -> tuple[str, ...]:
     if isinstance(node, ast.Import):
         return tuple(alias.name for alias in node.names)
     if isinstance(node, ast.ImportFrom):
-        if node.level:
-            return tuple(
-                _relative_import_name(relative, node, alias.name)
-                for alias in node.names
-            )
-        module = node.module or ""
+        module = _import_from_module_name(relative, node)
         return tuple(
             module if alias.name == "*" else f"{module}.{alias.name}".strip(".")
             for alias in node.names

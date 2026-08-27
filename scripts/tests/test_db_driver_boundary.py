@@ -98,6 +98,40 @@ def test_guard_is_the_only_non_test_connector_importer(tmp_path: Path) -> None:
     assert validate_db_driver_boundary(tmp_path) == []
 
 
+def test_private_db_guard_import_is_rejected(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "scripts/tool.py",
+        "from scripts.db.db_guard import _MssqlConnector\n",
+    )
+    errors = validate_db_driver_boundary(tmp_path)
+    assert len(errors) == 1
+    assert errors[0].startswith("scripts/tool.py:1 [db-driver-boundary]")
+    assert "db_guard" in errors[0]
+
+
+def test_db_guard_imports_declared_in_all_are_allowed(tmp_path: Path) -> None:
+    _write(tmp_path, "scripts/db/db_guard.py", '__all__ = ["safe"]\n')
+    _write(tmp_path, "scripts/tool.py", "from scripts.db.db_guard import safe\n")
+    assert validate_db_driver_boundary(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "import scripts.db.db_guard\nscripts.db.db_guard._MssqlConnector\n",
+        "import scripts.db.db_guard as db_guard\ndb_guard._MssqlConnector\n",
+    ],
+)
+def test_private_db_guard_attribute_is_rejected(
+    tmp_path: Path, content: str
+) -> None:
+    _write(tmp_path, "scripts/tool.py", content)
+    errors = validate_db_driver_boundary(tmp_path)
+    assert len(errors) == 1
+    assert "non-public db_guard attribute '_MssqlConnector'" in errors[0]
+
+
 def test_only_the_enumerated_connector_test_is_excepted(tmp_path: Path) -> None:
     _write(
         tmp_path,

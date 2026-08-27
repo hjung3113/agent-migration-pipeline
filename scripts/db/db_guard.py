@@ -22,13 +22,6 @@ from scripts.db.connection_profiles import (
     PROFILES,
     resolve_connection_profile,
 )
-from scripts.db.connectors.base import (
-    ConnectorError as _ConnectorError,
-)
-from scripts.db.connectors.mssql import MssqlConnector as _MssqlConnector
-from scripts.db.connectors.postgresql import (
-    PostgresqlConnector as _PostgresqlConnector,
-)
 from scripts.db.sql_classification import (
     BatchClassification,
     OPERATION_CLASSES as _OPERATION_CLASSES,
@@ -57,10 +50,6 @@ _BLOCK_REASONS = frozenset(
         "audit-failure",
     }
 )
-_DEFAULT_CONNECTORS = {
-    ENGINE_MSSQL: _MssqlConnector,
-    ENGINE_POSTGRESQL: _PostgresqlConnector,
-}
 _EMPTY_STATEMENT_HASH = hashlib.sha256(b"").hexdigest()
 _SESSION_TOKEN = object()
 
@@ -190,7 +179,7 @@ def _open_session(
         try:
             connection = connector.connect(resolved.connection_value)
             if connection is None:
-                raise _ConnectorError("connector returned no connection")
+                raise _connector_error("connector returned no connection")
             identity = connector.identity_probe(connection)
         except Exception:
             _close_failed_connection(connector, connection)
@@ -269,7 +258,14 @@ def _select_connector(
     except Exception:
         candidate = None
     if candidate is None:
-        candidate = _DEFAULT_CONNECTORS.get(engine)
+        if engine == ENGINE_MSSQL:
+            from scripts.db.connectors.mssql import MssqlConnector
+
+            candidate = MssqlConnector
+        elif engine == ENGINE_POSTGRESQL:
+            from scripts.db.connectors.postgresql import PostgresqlConnector
+
+            candidate = PostgresqlConnector
     if candidate is None:
         raise GuardBlockedError(
             "capability-mismatch",
@@ -323,6 +319,12 @@ def _close_failed_connection(connector: Any, connection: Any) -> None:
         pass
 
 
+def _connector_error(message: str) -> Exception:
+    from scripts.db.connectors.base import ConnectorError
+
+    return ConnectorError(message)
+
+
 class _SessionBase:
     __slots__ = (
         "_connector",
@@ -355,7 +357,7 @@ class _SessionBase:
         try:
             return self._connector.fetch_one(self._connection, sql, params)
         except Exception:
-            raise _ConnectorError("database fetch_one failed") from None
+            raise _connector_error("database fetch_one failed") from None
 
     def fetch_all(self, sql: str, params: Any = None) -> Any:
         classification = self._classify(sql)
@@ -364,7 +366,7 @@ class _SessionBase:
         try:
             return self._connector.fetch_all(self._connection, sql, params)
         except Exception:
-            raise _ConnectorError("database fetch_all failed") from None
+            raise _connector_error("database fetch_all failed") from None
 
     def close(self) -> None:
         if self._closed:
@@ -373,7 +375,7 @@ class _SessionBase:
         try:
             self._connector.close(self._connection)
         except Exception:
-            raise _ConnectorError("database connection close failed") from None
+            raise _connector_error("database connection close failed") from None
 
     def __enter__(self) -> _SessionBase:
         self._ensure_open()
@@ -467,7 +469,7 @@ class TestWriteSession(_SessionBase):
                 outcome="failed",
                 reason="execution-failure",
             )
-            raise _ConnectorError("database execution failed") from None
+            raise _connector_error("database execution failed") from None
 
         _emit_best_effort(
             self._context,

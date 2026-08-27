@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from unittest.mock import patch
 
@@ -518,16 +519,61 @@ def test_audit_events_use_default_stderr_sink_when_no_sink_is_given(
     assert len(capsys.readouterr().err.splitlines()) == 2
 
 
-def test_guard_module_has_no_cli_env_bypass_or_public_connector_reexport() -> None:
+def _contains_connector_symbol(
+    value: object,
+    connector_symbol_ids: set[int],
+    seen: set[int] | None = None,
+) -> bool:
+    if id(value) in connector_symbol_ids:
+        return True
+    visited = set() if seen is None else seen
+    if id(value) in visited:
+        return False
+    visited.add(id(value))
+    if isinstance(value, dict):
+        return any(
+            _contains_connector_symbol(item, connector_symbol_ids, visited)
+            for item in (*value.keys(), *value.values())
+        )
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(
+            _contains_connector_symbol(item, connector_symbol_ids, visited)
+            for item in value
+        )
+    if inspect.ismodule(value) and getattr(value, "__name__", "").startswith(
+        "scripts.db.connectors"
+    ):
+        return True
+    return False
+
+
+def test_guard_module_has_no_cli_env_bypass_or_connector_reexport() -> None:
     source = inspect.getsource(db_guard)
     assert "argparse" not in source
     assert "sys.argv" not in source
     assert "input(" not in source
     assert "os.environ" not in source
     assert "os.getenv" not in source
-    assert not hasattr(db_guard, "MssqlConnector")
-    assert not hasattr(db_guard, "PostgresqlConnector")
-    assert not hasattr(db_guard, "ConnectorError")
+    getattr(db_guard, "_select_connector")(ENGINE_MSSQL, None)
+    getattr(db_guard, "_select_connector")(ENGINE_POSTGRESQL, None)
+    connector_symbol_ids = {
+        id(value)
+        for module_name in (
+            "scripts.db.connectors.base",
+            "scripts.db.connectors.mssql",
+            "scripts.db.connectors.postgresql",
+        )
+        for value in vars(sys.modules[module_name]).values()
+        if (
+            inspect.isclass(value)
+            or inspect.isfunction(value)
+        )
+        and getattr(value, "__module__", "").startswith("scripts.db.connectors")
+    }
+    assert all(
+        not _contains_connector_symbol(value, connector_symbol_ids)
+        for value in vars(db_guard).values()
+    )
 
 
 def test_guard_does_not_accept_a_caller_raw_connection_string() -> None:

@@ -80,11 +80,24 @@ class PostgresqlConnector:
         cursor = self._cursor(connection, "execute")
         try:
             self._execute_cursor(cursor, sql, params)
-            return int(cursor.rowcount)
+            rowcount = int(cursor.rowcount)
         except Exception as exc:
+            self._rollback(connection)
             raise ConnectorError("postgresql execute failed") from exc
         finally:
             self._close_cursor(cursor)
+        try:
+            connection.commit()
+        except Exception as exc:
+            raise ConnectorError("postgresql execute commit failed") from exc
+        return rowcount
+
+    @staticmethod
+    def _rollback(connection: Any) -> None:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
 
     def close(self, connection: Any) -> None:
         try:

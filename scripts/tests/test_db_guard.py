@@ -278,6 +278,23 @@ def test_attestation_mismatch_blocks_before_caller_sql(
 @pytest.mark.parametrize(
     "identity",
     [
+        FakeIdentity(ENGINE_MSSQL, "prod-server ", "app"),
+        FakeIdentity(ENGINE_MSSQL, "prod-server", "app "),
+        FakeIdentity(ENGINE_MSSQL, " prod-server", "app"),
+    ],
+)
+def test_trailing_or_leading_whitespace_in_probed_identity_does_not_attest(
+    identity: FakeIdentity,
+) -> None:
+    connector = FakeConnector(identity=identity)
+    with pytest.raises(db_guard.GuardBlockedError) as raised:
+        _open_readonly(connector)
+    assert raised.value.reason == "attestation-mismatch"
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
         object(),
         FakeIdentity(ENGINE_MSSQL, "", "app"),
         FakeIdentity(ENGINE_MSSQL, "prod-server", ""),

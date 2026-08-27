@@ -102,7 +102,9 @@ _UNKNOWN_STARTS = frozenset(
         "GO",
     }
 )
-_PRIVILEGED_TARGETS = frozenset({"SERVER", "ROLE", "LOGIN", "USER"})
+_PRIVILEGED_TARGETS = frozenset(
+    {"SERVER", "ROLE", "LOGIN", "USER", "DATABASE", "SYSTEM", "EXTENSION"}
+)
 _FUNCTION_NAMES = frozenset(
     {
         "ABS",
@@ -476,7 +478,9 @@ def _first_class(tokens: Sequence[_Token]) -> str:
             return "mutation"
         if keyword == "COMMENT" and _next_word(tokens, 0) == "ON":
             return "ddl"
-        if keyword in {"INSERT", "UPDATE", "DELETE", "MERGE", "COPY"}:
+        if keyword == "COPY":
+            return "privileged" if _is_copy_program(tokens, 0) else "mutation"
+        if keyword in {"INSERT", "UPDATE", "DELETE", "MERGE"}:
             return "mutation"
         if keyword in {"CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME"}:
             return (
@@ -505,7 +509,11 @@ def _danger_classes(tokens: Sequence[_Token]) -> list[str]:
         keyword = token.value.upper()
         if keyword == "INTO":
             classes.append("mutation")
-        elif keyword in {"INSERT", "UPDATE", "DELETE", "MERGE", "COPY"}:
+        elif keyword == "COPY":
+            classes.append(
+                "privileged" if _is_copy_program(tokens, index) else "mutation"
+            )
+        elif keyword in {"INSERT", "UPDATE", "DELETE", "MERGE"}:
             classes.append("mutation")
         elif keyword == "BULK" and _next_word(tokens, index) == "INSERT":
             classes.append("mutation")
@@ -537,7 +545,9 @@ def _verb_class(tokens: Sequence[_Token], index: int | None) -> str:
         return "mutation"
     if keyword == "COMMENT" and _next_word(tokens, index) == "ON":
         return "ddl"
-    if keyword in {"INSERT", "UPDATE", "DELETE", "MERGE", "COPY"}:
+    if keyword == "COPY":
+        return "privileged" if _is_copy_program(tokens, index) else "mutation"
+    if keyword in {"INSERT", "UPDATE", "DELETE", "MERGE"}:
         return "mutation"
     if keyword in {"CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME"}:
         return "privileged" if _has_privileged_target_after(tokens, index) else "ddl"
@@ -601,6 +611,13 @@ def _after_matching_parenthesis(tokens: Sequence[_Token], start: int) -> int | N
 def _has_privileged_target_after(tokens: Sequence[_Token], index: int) -> bool:
     next_word = _next_word(tokens, index)
     return next_word in _PRIVILEGED_TARGETS
+
+
+def _is_copy_program(tokens: Sequence[_Token], index: int) -> bool:
+    # COPY ... FROM/TO PROGRAM 'shell command' executes on the server host,
+    # not just the target table — always privileged regardless of PROGRAM's
+    # position relative to COPY.
+    return _has_word(tokens[index:], "PROGRAM")
 
 
 def _has_word(tokens: Sequence[_Token], wanted: str) -> bool:

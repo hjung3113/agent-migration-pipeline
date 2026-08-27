@@ -48,11 +48,22 @@ class FakeConnection:
     execute_error: Exception | None = None
     cursors: list[FakeCursor] = field(default_factory=list)
     closed: bool = False
+    committed: bool = False
+    rolled_back: bool = False
+    commit_error: Exception | None = None
 
     def cursor(self) -> FakeCursor:
         cursor = FakeCursor(self)
         self.cursors.append(cursor)
         return cursor
+
+    def commit(self) -> None:
+        if self.commit_error is not None:
+            raise self.commit_error
+        self.committed = True
+
+    def rollback(self) -> None:
+        self.rolled_back = True
 
     def close(self) -> None:
         self.closed = True
@@ -199,6 +210,35 @@ def test_execute_passes_parameters_without_interpolation_and_returns_rowcount() 
     assert connection.cursors[0].executed == [
         ("UPDATE accounts SET name = ? WHERE id = ?", ((sentinel, 4),))
     ]
+    assert connection.committed is True
+    assert connection.rolled_back is False
+
+
+def test_execute_commits_for_postgresql_connector_too() -> None:
+    from scripts.db.connectors.postgresql import PostgresqlConnector
+
+    connection = FakeConnection(rowcount=2)
+    count = PostgresqlConnector().execute(connection, "DELETE FROM accounts WHERE id = %s", (4,))
+    assert count == 2
+    assert connection.committed is True
+
+
+def test_execute_rolls_back_and_does_not_commit_on_failure() -> None:
+    from scripts.db.connectors.mssql import ConnectorError, MssqlConnector
+
+    connection = FakeConnection(execute_error=RuntimeError("boom"))
+    with pytest.raises(ConnectorError):
+        MssqlConnector().execute(connection, "UPDATE accounts SET name = 'x'")
+    assert connection.rolled_back is True
+    assert connection.committed is False
+
+
+def test_execute_raises_when_commit_itself_fails() -> None:
+    from scripts.db.connectors.mssql import ConnectorError, MssqlConnector
+
+    connection = FakeConnection(commit_error=RuntimeError("commit boom"))
+    with pytest.raises(ConnectorError):
+        MssqlConnector().execute(connection, "UPDATE accounts SET name = 'x'")
 
 
 def test_fetch_methods_and_close_delegate_to_connection() -> None:

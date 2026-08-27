@@ -283,10 +283,9 @@ def _identity_matches(
     expected_target: ExpectedTarget,
 ) -> bool:
     return (
-        identity.engine.strip() == expected_engine.strip()
-        and identity.server_identity.strip() == expected_target.server_identity.strip()
-        and identity.database_identity.strip()
-        == expected_target.database_identity.strip()
+        identity.engine == expected_engine
+        and identity.server_identity == expected_target.server_identity
+        and identity.database_identity == expected_target.database_identity
     )
 
 

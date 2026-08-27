@@ -253,3 +253,30 @@ def test_statement_normalized_sql_is_the_redacted_form() -> None:
     result = classify_statement("/* comment */ SELECT 'SECRET-VALUE' FROM accounts")
     assert result.normalized_sql == "SELECT ? FROM accounts"
     assert "SECRET-VALUE" not in result.normalized_sql
+
+
+@pytest.mark.parametrize(
+    ("sql", "replacement", "secret"),
+    [
+        (
+            'SELECT "DOUBLE-QUOTED-SECRET" FROM accounts',
+            'SELECT "DOUBLE-QUOTED-OTHER" FROM accounts',
+            "DOUBLE-QUOTED-SECRET",
+        ),
+        (
+            "SELECT $$DOLLAR-QUOTED-SECRET$$ FROM accounts",
+            "SELECT $$DOLLAR-QUOTED-OTHER$$ FROM accounts",
+            "DOLLAR-QUOTED-SECRET",
+        ),
+    ],
+)
+def test_double_and_dollar_quoted_literals_are_masked_from_preview_and_hash(
+    sql: str, replacement: str, secret: str
+) -> None:
+    first = classify_batch(sql)
+    second = classify_batch(replacement)
+
+    assert redact(sql) == "SELECT ? FROM accounts"
+    assert secret not in first.preview
+    assert first.preview == second.preview
+    assert first.statement_hash == second.statement_hash

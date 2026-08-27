@@ -215,6 +215,16 @@ def _tokenize(sql: str) -> tuple[list[_Token], bool]:
             tokens.append(token)
             continue
 
+        if char == "$":
+            dollar_end = _consume_dollar_quoted(sql, index)
+            if dollar_end is not None:
+                index, closed = dollar_end
+                if not closed:
+                    malformed = True
+                    break
+                tokens.append(_Token("literal", "?"))
+                continue
+
         if char in "NnEe" and index + 1 < length and sql[index + 1] == "'":
             token, index, closed = _consume_quoted(sql, index + 1)
             if not closed:
@@ -279,6 +289,33 @@ def _consume_quoted(sql: str, start: int) -> tuple[_Token, int, bool]:
     if opener == "'":
         return _Token("literal", "?"), len(sql), False
     return _Token("quoted", "?"), len(sql), False
+
+
+def _consume_dollar_quoted(sql: str, start: int) -> tuple[int, bool] | None:
+    """Consume a PostgreSQL dollar-quoted literal when a delimiter is present."""
+    index = start + 1
+    if index >= len(sql):
+        return None
+
+    if sql[index] == "$":
+        index += 1
+    else:
+        if not (sql[index] == "_" or sql[index].isalpha()):
+            return None
+        index += 1
+        while index < len(sql) and (
+            sql[index] == "_" or sql[index].isalnum()
+        ):
+            index += 1
+        if index >= len(sql) or sql[index] != "$":
+            return None
+        index += 1
+
+    delimiter = sql[start:index]
+    closing = sql.find(delimiter, index)
+    if closing == -1:
+        return len(sql), False
+    return closing + len(delimiter), True
 
 
 def _consume_number(sql: str, start: int) -> int:
@@ -364,7 +401,11 @@ def _normalize_tokens(tokens: Sequence[_Token]) -> str:
     result = ""
     previous: _Token | None = None
     for token in tokens:
-        value = token.value
+        value = (
+            "?"
+            if token.kind == "quoted" and token.value.startswith('"')
+            else token.value
+        )
         if not result:
             result = value
         elif _needs_space(previous, token):

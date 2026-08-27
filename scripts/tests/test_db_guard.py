@@ -462,6 +462,37 @@ def test_allowed_and_succeeded_audit_events_are_redacted_and_single_line() -> No
     assert SENTINEL_ROW not in "\n".join(events)
 
 
+@pytest.mark.parametrize(
+    ("sql", "replacement", "secret"),
+    [
+        (
+            'INSERT INTO accounts (name) VALUES ("DOUBLE-QUOTED-SECRET")',
+            'INSERT INTO accounts (name) VALUES ("DOUBLE-QUOTED-OTHER")',
+            "DOUBLE-QUOTED-SECRET",
+        ),
+        (
+            "INSERT INTO accounts (name) VALUES ($$DOLLAR-QUOTED-SECRET$$)",
+            "INSERT INTO accounts (name) VALUES ($$DOLLAR-QUOTED-OTHER$$)",
+            "DOLLAR-QUOTED-SECRET",
+        ),
+    ],
+)
+def test_audit_masks_double_and_dollar_quoted_literals(
+    sql: str, replacement: str, secret: str
+) -> None:
+    first_events = _events()
+    test_identity = FakeIdentity(ENGINE_MSSQL, "test-server", "app_test")
+    _open_test(FakeConnector(identity=test_identity), first_events).execute(sql)
+    second_events = _events()
+    _open_test(FakeConnector(identity=test_identity), second_events).execute(replacement)
+
+    first_allowed = _event_lines(first_events)[0]
+    second_allowed = _event_lines(second_events)[0]
+    assert secret not in "\n".join(first_events)
+    assert first_allowed["sql_preview"] == second_allowed["sql_preview"]
+    assert first_allowed["statement_hash"] == second_allowed["statement_hash"]
+
+
 def test_failed_execution_emits_failed_audit_without_sensitive_exception_text() -> None:
     connector = FakeConnector(
         identity=FakeIdentity(ENGINE_MSSQL, "test-server", "app_test"),

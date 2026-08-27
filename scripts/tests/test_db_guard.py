@@ -106,13 +106,15 @@ def _open_readonly(
     environ: dict[str, str] | None = None,
 ):
     with patch.object(db_guard, "_EXPECTED_TARGETS", metadata):
-        with patch.dict(os.environ, ENVIRON if environ is None else environ, clear=True):
-            return db_guard.open_readonly(
-                "mssql-prod-ro",
-                tool_id="test-tool",
-                connector_overrides={ENGINE_MSSQL: connector},
-                audit_sink=(events if events is not None else _events()).append,
-            )
+        with patch.object(db_guard, "_select_connector", return_value=connector):
+            with patch.dict(
+                os.environ, ENVIRON if environ is None else environ, clear=True
+            ):
+                return db_guard.open_readonly(
+                    "mssql-prod-ro",
+                    tool_id="test-tool",
+                    audit_sink=(events if events is not None else _events()).append,
+                )
 
 
 def _open_test(
@@ -124,13 +126,15 @@ def _open_test(
     profile_name: str = "mssql-test-rw",
 ):
     with patch.object(db_guard, "_EXPECTED_TARGETS", metadata):
-        with patch.dict(os.environ, ENVIRON if environ is None else environ, clear=True):
-            return db_guard.open_test_readwrite(
-                profile_name,
-                tool_id="test-tool",
-                connector_overrides={ENGINE_MSSQL: connector},
-                audit_sink=(events if events is not None else _events()).append,
-            )
+        with patch.object(db_guard, "_select_connector", return_value=connector):
+            with patch.dict(
+                os.environ, ENVIRON if environ is None else environ, clear=True
+            ):
+                return db_guard.open_test_readwrite(
+                    profile_name,
+                    tool_id="test-tool",
+                    audit_sink=(events if events is not None else _events()).append,
+                )
 
 
 def _event_lines(events: list[str]) -> list[dict[str, object]]:
@@ -142,7 +146,6 @@ def test_public_factory_signatures_have_no_raw_connection_or_bypass_argument() -
         "profile_name",
         "tool_id",
         "allowed_profiles",
-        "connector_overrides",
         "audit_sink",
     ]
     for factory in (db_guard.open_readonly, db_guard.open_test_readwrite):
@@ -418,13 +421,13 @@ def test_pre_audit_sink_failure_cancels_hazardous_execution() -> None:
         raise OSError("sink unavailable")
 
     with patch.object(db_guard, "_EXPECTED_TARGETS", TARGETS):
-        with patch.dict(os.environ, ENVIRON, clear=True):
-            session = db_guard.open_test_readwrite(
-                "mssql-test-rw",
-                tool_id="test-tool",
-                connector_overrides={ENGINE_MSSQL: connector},
-                audit_sink=fail_sink,
-            )
+        with patch.object(db_guard, "_select_connector", return_value=connector):
+            with patch.dict(os.environ, ENVIRON, clear=True):
+                session = db_guard.open_test_readwrite(
+                    "mssql-test-rw",
+                    tool_id="test-tool",
+                    audit_sink=fail_sink,
+                )
     with pytest.raises(db_guard.GuardBlockedError) as raised:
         session.execute("INSERT INTO accounts VALUES (1)")
     assert raised.value.reason == "audit-failure"
@@ -523,12 +526,12 @@ def test_audit_events_use_default_stderr_sink_when_no_sink_is_given(
         identity=FakeIdentity(ENGINE_MSSQL, "test-server", "app_test")
     )
     with patch.object(db_guard, "_EXPECTED_TARGETS", TARGETS):
-        with patch.dict(os.environ, ENVIRON, clear=True):
-            session = db_guard.open_test_readwrite(
-                "mssql-test-rw",
-                tool_id="test-tool",
-                connector_overrides={ENGINE_MSSQL: connector},
-            )
+        with patch.object(db_guard, "_select_connector", return_value=connector):
+            with patch.dict(os.environ, ENVIRON, clear=True):
+                session = db_guard.open_test_readwrite(
+                    "mssql-test-rw",
+                    tool_id="test-tool",
+                )
     session.execute("INSERT INTO accounts VALUES (1)")
     assert len(capsys.readouterr().err.splitlines()) == 2
 
@@ -568,8 +571,8 @@ def test_guard_module_has_no_cli_env_bypass_or_connector_reexport() -> None:
     assert "input(" not in source
     assert "os.environ" not in source
     assert "os.getenv" not in source
-    getattr(db_guard, "_select_connector")(ENGINE_MSSQL, None)
-    getattr(db_guard, "_select_connector")(ENGINE_POSTGRESQL, None)
+    getattr(db_guard, "_select_connector")(ENGINE_MSSQL)
+    getattr(db_guard, "_select_connector")(ENGINE_POSTGRESQL)
     connector_symbol_ids = {
         id(value)
         for module_name in (
@@ -599,6 +602,30 @@ def test_guard_does_not_accept_a_caller_raw_connection_string() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("factory", "profile_name"),
+    [
+        (db_guard.open_readonly, "mssql-prod-ro"),
+        (db_guard.open_test_readwrite, "mssql-test-rw"),
+    ],
+)
+def test_public_factories_reject_connector_override_before_secret_capture(
+    factory, profile_name: str
+) -> None:
+    connector = FakeConnector(
+        identity=FakeIdentity(ENGINE_MSSQL, "test-server", "app_test")
+    )
+    with patch.object(db_guard, "_EXPECTED_TARGETS", TARGETS):
+        with patch.dict(os.environ, ENVIRON, clear=True):
+            with pytest.raises(TypeError):
+                factory(
+                    profile_name,
+                    tool_id="test-tool",
+                    connector_overrides={ENGINE_MSSQL: connector},
+                )
+    assert connector.connect_calls == []
+
+
 def test_connector_receives_only_resolver_value_after_all_checks() -> None:
     connector = FakeConnector(
         identity=FakeIdentity(ENGINE_MSSQL, "test-server", "app_test")
@@ -613,15 +640,10 @@ def test_public_factory_rejects_combined_metadata_and_environment_overrides() ->
         "mssql-test-rw": ExpectedTarget("prod-server", "app"),
         "postgres-test-rw": ExpectedTarget("pg-server", "pg_app_test"),
     }
-    connector = FakeConnector(
-        identity=FakeIdentity(ENGINE_MSSQL, "prod-server", "app")
-    )
-
     with pytest.raises(TypeError):
         db_guard.open_test_readwrite(
             "mssql-test-rw",
             tool_id="test-tool",
             environ={"MSSQL_TEST_RW_CONN": SENTINEL_CONNECTION},
-            connector_overrides={ENGINE_MSSQL: connector},
             metadata=decoy_metadata,
         )

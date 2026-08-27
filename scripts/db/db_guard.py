@@ -12,7 +12,7 @@ import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Collection, Mapping
+from typing import Any, Callable, Collection
 
 from scripts.db.connection_profiles import (
     CAPABILITY_READ_WRITE,
@@ -79,7 +79,6 @@ def open_readonly(
     *,
     tool_id: str,
     allowed_profiles: Collection[str] | None = None,
-    connector_overrides: Mapping[str, Any] | None = None,
     audit_sink: Callable[[str], None] | None = None,
 ) -> ReadOnlySession:
     """Open an attested read-only capability for a canonical profile."""
@@ -87,7 +86,6 @@ def open_readonly(
         profile_name,
         tool_id=tool_id,
         allowed_profiles=allowed_profiles,
-        connector_overrides=connector_overrides,
         audit_sink=audit_sink,
         writable=False,
     )
@@ -98,7 +96,6 @@ def open_test_readwrite(
     *,
     tool_id: str,
     allowed_profiles: Collection[str] | None = None,
-    connector_overrides: Mapping[str, Any] | None = None,
     audit_sink: Callable[[str], None] | None = None,
 ) -> TestWriteSession:
     """Open an attested test read-write capability."""
@@ -106,7 +103,6 @@ def open_test_readwrite(
         profile_name,
         tool_id=tool_id,
         allowed_profiles=allowed_profiles,
-        connector_overrides=connector_overrides,
         audit_sink=audit_sink,
         writable=True,
     )
@@ -117,7 +113,6 @@ def _open_session(
     *,
     tool_id: str,
     allowed_profiles: Collection[str] | None,
-    connector_overrides: Mapping[str, Any] | None,
     audit_sink: Callable[[str], None] | None,
     writable: bool,
 ) -> ReadOnlySession | TestWriteSession:
@@ -175,7 +170,7 @@ def _open_session(
                 "expected target metadata is unavailable",
             ) from None
 
-        connector = _select_connector(profile.engine, connector_overrides)
+        connector = _select_connector(profile.engine)
         try:
             connection = connector.connect(resolved.connection_value)
             if connection is None:
@@ -244,41 +239,27 @@ def _known_profile(profile_name: Any) -> Any:
     return PROFILES.get(profile_name)
 
 
-def _select_connector(
-    engine: str,
-    connector_overrides: Mapping[str, Any] | None,
-) -> Any:
-    try:
-        candidate = (
-            connector_overrides.get(engine)
-            if connector_overrides is not None
-            else None
-        )
-    except Exception:
-        candidate = None
-    if candidate is None:
-        if engine == ENGINE_MSSQL:
-            from scripts.db.connectors.mssql import MssqlConnector
+def _select_connector(engine: str) -> Any:
+    if engine == ENGINE_MSSQL:
+        from scripts.db.connectors.mssql import MssqlConnector
 
-            candidate = MssqlConnector
-        elif engine == ENGINE_POSTGRESQL:
-            from scripts.db.connectors.postgresql import PostgresqlConnector
+        connector_type = MssqlConnector
+    elif engine == ENGINE_POSTGRESQL:
+        from scripts.db.connectors.postgresql import PostgresqlConnector
 
-            candidate = PostgresqlConnector
-    if candidate is None:
+        connector_type = PostgresqlConnector
+    else:
         raise GuardBlockedError(
             "capability-mismatch",
             "profile engine has no approved connector",
         )
-    if isinstance(candidate, type):
-        try:
-            candidate = candidate()
-        except Exception:
-            raise GuardBlockedError(
-                "capability-mismatch",
-                "approved connector could not be constructed",
-            ) from None
-    return candidate
+    try:
+        return connector_type()
+    except Exception:
+        raise GuardBlockedError(
+            "capability-mismatch",
+            "approved connector could not be constructed",
+        ) from None
 
 
 def _valid_identity_shape(identity: Any) -> bool:

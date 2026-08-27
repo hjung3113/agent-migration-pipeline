@@ -5,13 +5,89 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-28
 
-## Next session: Issue #20 PR open on branch `hjung3113/issue20-plan` — awaiting user's explicit merge instruction
+## Next session: Issue #20 merged (PR #69, `18f20a4`) — Track D continues at #18/#22 core
 
-**Issue #20 (DB execution safety guard) is fully implemented, three independent review
-rounds complete (T-R1/T-R2/T-R3), all findings judged and closed, PR opened against `main`.
-Not merged — waiting on the user's explicit merge instruction (standing workflow rule,
-`feedback_no_auto_merge`). Do not merge without that instruction; when it comes, re-check
-`git log main..HEAD` immediately before merging (past timing-race precedent).**
+**Issue #20 (DB execution safety guard) is merged to `main`** (squash-merged as `18f20a4`,
+PR #69 closed, issue #20 closed). `main` re-verified post-merge (not just at PR HEAD):
+`python3 scripts/validate_scaffold.py` exit 0; `python3 -m pytest scripts/tests/ -q` —
+**631 passed** (616 at PR HEAD + 15 new from this session's review-response commit).
+
+**This session's work beyond the 3 already-documented review rounds (T-R1/T-R2/T-R3,
+condensed below in the folded historical section)**: after PR #69 was opened, the repo's
+`chatgpt-codex-connector[bot]` posted 3 inline review comments — a 4th review source not
+originating from this repo's own orca-cli pipeline. All 3 were independently verified
+against the real code (not taken on the bot's word) before any fix, per
+`feedback_security_rigor_scope` — all 3 confirmed real and in-scope (an AI agent's honest
+mistake, not attacker-grade), fixed directly in this session (not dispatched to
+codex/omp — a 3-finding, already-diagnosed patch didn't warrant the full pipeline), commit
+`d6a9678` on the PR branch, 15 new regression tests, then squash-merged:
+
+- **P1 — successful test writes weren't committed.** `pyodbc`/`psycopg` default to
+  transactional (non-autocommit) mode; `TestWriteSession.execute()` returned a rowcount
+  after `cursor.execute()` but never called `connection.commit()`, so a caller could get a
+  successful row count + audit event and then have the write silently rolled back when
+  `close()` ran (or connection pooling reused the connection) — every caller would have had
+  to embed its own `COMMIT` in the SQL batch, unstated anywhere in the contract. Fixed:
+  both connectors now `commit()` after a successful `execute()` and `rollback()` on failure
+  (`scripts/db/connectors/{mssql,postgresql}.py`).
+- **P1 — server-level administration wasn't classified privileged.** `_PRIVILEGED_TARGETS`
+  was `{SERVER, ROLE, LOGIN, USER}` — missing `DATABASE`, `SYSTEM`, `EXTENSION` — so
+  `CREATE/DROP/ALTER DATABASE` and PostgreSQL's `ALTER SYSTEM`/`CREATE EXTENSION` classified
+  as `ddl`, which `TestWriteSession.execute()` allows. Separately, `COPY` was unconditionally
+  classified `mutation` with no check for PostgreSQL's `COPY ... PROGRAM '<shell command>'`
+  form, which executes an arbitrary command on the database server host — a much more severe
+  capability than a table copy. Both weaken the guard specifically when the attested test
+  credential is over-privileged (a real, not hypothetical, risk this design already accepts
+  as a residual per docs/12). Fixed: `DATABASE`/`SYSTEM`/`EXTENSION` added to
+  `_PRIVILEGED_TARGETS`; `COPY` now checks for a `PROGRAM` token anywhere in the statement
+  and classifies `privileged` when present (`scripts/db/sql_classification.py`).
+- **P2 — attested identity comparison stripped whitespace.** `_identity_matches` called
+  `.strip()` on both the probed identity and the expected-target registry values before
+  comparing; `target_metadata.py`'s own validator already rejects registry values with
+  surrounding whitespace, but the stripped comparison meant a probed identity with
+  incidental whitespace (e.g. from a quoted database name) could still attest against a
+  different expected target instead of failing closed. Fixed: exact comparison, no
+  stripping (`scripts/db/db_guard.py::_identity_matches`).
+
+Full fix writeup posted as a PR #69 comment before merge. Merge required one non-semantic
+conflict resolution: `main` had advanced by one `docs: update handoff` commit
+(`fce1d9e`) between PR open and this session's merge — resolved by taking the branch's
+`HANDOFF.md` (this file was about to be fully rewritten for this entry anyway), merged
+`main` into the branch first (`35507d4`), re-verified 631 passed post-merge, then squash-
+merged. CI (`backend`/`frontend`/`repo-guards`, both required job instances) confirmed green
+before merging, not just assumed from local test runs.
+
+**Consumption for #18/#19/#21/#22:** `from scripts.db.db_guard import open_readonly,
+open_test_readwrite`. `open_readonly` → `ReadOnlySession` (fetch-only). `open_test_readwrite`
+→ `TestWriteSession` (fetch + one guarded `execute`, canonical test read-write profile
+only, after attestation).
+
+**Open items requested from the repo owner in the Issue #20 close-out comment (not
+blockers, not silently assumed, posted verbatim to the issue before closing it):**
+1. Real `server_identity`/`database_identity` values for each canonical profile
+   (`scripts/db/target_metadata.py` ships unresolved by design, P-3) — and per T-R3's NF-4,
+   the MSSQL `server_identity` value must actually distinguish environments (not a bare
+   default instance name — two default instances on isolated networks would attest
+   identically otherwise).
+2. Confirmation the production credential is server-enforced read-only at the
+   account/server level (AC2 — can't be runtime-verified without an actual write attempt
+   against production).
+3. Real MSSQL/PostgreSQL live-integration testing deferred (approved test infra not yet
+   available) — explicit non-goal of this PR.
+
+**Next: Track D order per `migration/ISSUES-PLAN-DRAFT.md` is `#23 -> #20 -> (#18, #22 core)
+-> #22 live adapter -> #21 (deferred)`.** #20 is now done — before starting #18 or #22's
+core, redo the "구현 시작 전 체크" 7-item gate against current `main` (same template as
+#20/#23's own execution plans used), and read `scripts/db/db_guard.py` as it now stands
+(post-review-response shape, not the PR-open shape) since #18/#19/#21/#22 are exactly the
+consumers of this guard's public API. Rule-13 Track P/D authorization remains in effect and
+has not been revoked. Per this repo's own owner-review precedent (#61/#62/#64/#65/#67/#68/#69),
+budget for an owner-level post-merge pass on #20 too — not yet done this session, since the
+bot review + fix + merge happened in the same pass as this handoff update (a deviation from
+`feedback_split_long_sessions`' stage-boundary guidance, noted here rather than silently
+repeated — the next Track D item should go back to splitting at each review-round boundary).
+
+## Historical: Issue #20 implemented, 3-round independent review, PR #69 opened
 
 Final branch state (`hjung3113/issue20-plan`, HEAD `198345c`): 14 fix/feature commits since
 `d13b978`'s plan baseline. `python3 scripts/validate_scaffold.py` exit 0; `python3 -m

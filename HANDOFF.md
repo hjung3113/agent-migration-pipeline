@@ -3,9 +3,87 @@
 Single handoff file for this repo. **Always update this file in place — do
 not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
-Last updated: 2026-08-26
+Last updated: 2026-08-28
 
-## Next session: Issue #20 implemented (T-1..T-I1), all gates green — needs T-R1/T-R2 independent reviews before PR
+## Next session: Issue #20 PR #69 open — awaiting user's explicit merge instruction
+
+**Issue #20 (DB execution safety guard) is fully implemented, three independent review
+rounds complete (T-R1/T-R2/T-R3), all findings judged and closed, PR #69 opened
+(`hjung3113/issue20-plan` → `main`, HEAD `84ed388` on the branch). Not merged — waiting on
+the user's explicit merge instruction (standing workflow rule, `feedback_no_auto_merge`).
+Do not merge without that instruction; when it comes, re-check `git log main..HEAD`
+immediately before merging (past timing-race precedent).**
+
+Branch state: 15 commits since the `d13b978` plan baseline (implementation + 3 review
+rounds' worth of fixes + the branch's own HANDOFF update commit). `python3
+scripts/validate_scaffold.py` exit 0; `python3 -m pytest scripts/tests/ -q` — **616
+passed**; `git diff main..HEAD --name-only` (excluding `HANDOFF.md`) shows exactly the
+expected 13 files (5 new `scripts/db/` modules incl. 3 connectors, 5 new test files,
+`scripts/validate_scaffold.py`, `migration/ISSUE-20-EXECUTION-PLAN.md`); zero diff against
+`scripts/db/connection_profiles.py`, `.env.example`, `.gitignore`, or
+`docs/12-db-execution-safety-contract.md`.
+
+**Pipeline this session, per the user's explicit process corrections (now standing
+memories — read before picking up similar Track D work):**
+- Implementation dispatched via orca-cli to **codex** (`gpt-5.6-luna`,
+  `model_reasoning_effort=max`); independent review rounds dispatched via orca-cli to
+  **omp** (`glm-5.3`, `--thinking high`) — a different backend/model from the implementer,
+  per `feedback_agent_model_routing`.
+- **Every finding gets a YAGNI pass against this tool's actual threat model before any fix
+  is dispatched** — the guard exists to stop an *AI agent's honest mistake* from reaching
+  production (`docs/12-db-execution-safety-contract.md` L9, "low-reasoning agent" framing),
+  not to defend against a sophisticated external attacker; this is an internal tool.
+  Findings reachable by a plausible agent mistake get fixed; findings requiring deliberate
+  attacker-grade construction get recorded as documented limitations, not fixed. See
+  `feedback_security_rigor_scope` — this judgment call is why review rounds stopped
+  multiplying, not a round-count cap applied for its own sake.
+- Multi-stage pipelines (plan → implement → review → fix → review → fix → PR) should be
+  laid out as an explicit DAG with a stated stop condition up front, and should NOT all run
+  inside one long coordinator session with repeated poll loops — split by stage, update
+  HANDOFF, let the next session resume. See `feedback_dag_task_breakdown` and
+  `feedback_split_long_sessions`. This session did not fully follow that (all 3 review
+  rounds + fixes ran in one session, per the user's own real-time correction mid-session) —
+  future Track D work should split at each review-round boundary instead.
+
+**Review round summary** (full reports posted as PR #69 comments; condensed history in the
+"Historical: Issue #20 implemented" section below this one):
+- **T-R1** (in-process fresh Claude subagent, two-phase PR-body-then-diff): REQUEST
+  CHANGES, 4 blocking (B1-B4: public `metadata=`/`environ=` override seam defeating
+  attestation; partially-resolved registry silently disabling the prod/test collision
+  check; case-sensitive collision comparison; underscore-aliased connector re-exports
+  invisible to the boundary check) + 4 non-blocking (N1-N4), all fixed.
+- **T-R2** (orca-cli omp, glm-5.3 high): REQUEST CHANGES, 2 new blocking — both residuals
+  of the T-R1 fix commits themselves (F1: `connector_overrides` param B1's fix left
+  standing, still let a caller fabricate attestation + capture the secret connection value;
+  F2: literal-masking missed `"`-quoted/`$...$`-quoted forms, leaking into audit preview) —
+  + 3 non-blocking (F3-F5), all fixed.
+- **T-R3** (orca-cli omp, glm-5.3 high): **PASS, mergeable**, no blocking findings. 1
+  non-blocking finding (NF-1: PostgreSQL `E'...'` escape-handling gap in audit-preview
+  masking), fixed. 5 additional findings (NF-2..NF-6) explicitly judged out of scope
+  (attacker-grade or deliberate/contract-conformant design) and left unfixed — recorded,
+  not silently dropped; NF-4 in particular is a real deployment-fact note (see below).
+
+**Consumption for #18/#19/#21/#22:** `from scripts.db.db_guard import open_readonly,
+open_test_readwrite`. `open_readonly` → `ReadOnlySession` (fetch-only). `open_test_readwrite`
+→ `TestWriteSession` (fetch + one guarded `execute`, canonical test read-write profile
+only, after attestation).
+
+**Remaining known uncertainty, requested from the user in the Issue #20 comment (not
+blockers, not silently assumed):**
+1. Real `server_identity`/`database_identity` values for each canonical profile
+   (`scripts/db/target_metadata.py` ships unresolved by design, P-3) — **and** per T-R3's
+   NF-4, the MSSQL `server_identity` value must actually distinguish environments (not a
+   bare default instance name — two default instances on isolated networks would attest
+   identically otherwise).
+2. Confirmation the production credential is server-enforced read-only at the
+   account/server level (AC2 — can't be runtime-verified without an actual write attempt
+   against production).
+3. Real MSSQL/PostgreSQL live-integration testing deferred (approved test infra not yet
+   available) — explicit non-goal of this PR.
+
+**After merge**, this repo's precedent (#61/#62/#64/#65/#67/#68) is an owner-level
+post-merge review pass before treating the issue as fully complete — budget for that in the
+next session too.
 
 **Issue #20 (DB execution safety guard) is implemented and committed on branch
 `hjung3113/issue20-plan` in worktree `/Users/hyojung/orca/workspaces/agent-migration-pipeline/issue20-plan`,

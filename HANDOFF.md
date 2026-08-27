@@ -5,22 +5,20 @@ not create dated/numbered handoff files.** See AGENTS.md "Handoff rule."
 
 Last updated: 2026-08-28
 
-## Next session: Issue #20 PR #69 open — awaiting user's explicit merge instruction
+## Next session: Issue #20 PR open on branch `hjung3113/issue20-plan` — awaiting user's explicit merge instruction
 
 **Issue #20 (DB execution safety guard) is fully implemented, three independent review
-rounds complete (T-R1/T-R2/T-R3), all findings judged and closed, PR #69 opened
-(`hjung3113/issue20-plan` → `main`, HEAD `84ed388` on the branch). Not merged — waiting on
-the user's explicit merge instruction (standing workflow rule, `feedback_no_auto_merge`).
-Do not merge without that instruction; when it comes, re-check `git log main..HEAD`
-immediately before merging (past timing-race precedent).**
+rounds complete (T-R1/T-R2/T-R3), all findings judged and closed, PR opened against `main`.
+Not merged — waiting on the user's explicit merge instruction (standing workflow rule,
+`feedback_no_auto_merge`). Do not merge without that instruction; when it comes, re-check
+`git log main..HEAD` immediately before merging (past timing-race precedent).**
 
-Branch state: 15 commits since the `d13b978` plan baseline (implementation + 3 review
-rounds' worth of fixes + the branch's own HANDOFF update commit). `python3
-scripts/validate_scaffold.py` exit 0; `python3 -m pytest scripts/tests/ -q` — **616
-passed**; `git diff main..HEAD --name-only` (excluding `HANDOFF.md`) shows exactly the
-expected 13 files (5 new `scripts/db/` modules incl. 3 connectors, 5 new test files,
-`scripts/validate_scaffold.py`, `migration/ISSUE-20-EXECUTION-PLAN.md`); zero diff against
-`scripts/db/connection_profiles.py`, `.env.example`, `.gitignore`, or
+Final branch state (`hjung3113/issue20-plan`, HEAD `198345c`): 14 fix/feature commits since
+`d13b978`'s plan baseline. `python3 scripts/validate_scaffold.py` exit 0; `python3 -m
+pytest scripts/tests/ -q` — **616 passed**; `git diff main..HEAD --name-only` shows exactly
+the expected 14 files (5 new `scripts/db/` modules incl. 3 connectors, 5 new test files,
+`scripts/validate_scaffold.py`, `HANDOFF.md`, `migration/ISSUE-20-EXECUTION-PLAN.md`); zero
+diff against `scripts/db/connection_profiles.py`, `.env.example`, `.gitignore`, or
 `docs/12-db-execution-safety-contract.md`.
 
 **Pipeline this session, per the user's explicit process corrections (now standing
@@ -28,62 +26,117 @@ memories — read before picking up similar Track D work):**
 - Implementation dispatched via orca-cli to **codex** (`gpt-5.6-luna`,
   `model_reasoning_effort=max`); independent review rounds dispatched via orca-cli to
   **omp** (`glm-5.3`, `--thinking high`) — a different backend/model from the implementer,
-  per `feedback_agent_model_routing`.
-- **Every finding gets a YAGNI pass against this tool's actual threat model before any fix
-  is dispatched** — the guard exists to stop an *AI agent's honest mistake* from reaching
-  production (`docs/12-db-execution-safety-contract.md` L9, "low-reasoning agent" framing),
-  not to defend against a sophisticated external attacker; this is an internal tool.
-  Findings reachable by a plausible agent mistake get fixed; findings requiring deliberate
-  attacker-grade construction get recorded as documented limitations, not fixed. See
-  `feedback_security_rigor_scope` — this judgment call is why review rounds stopped
-  multiplying, not a round-count cap applied for its own sake.
-- Multi-stage pipelines (plan → implement → review → fix → review → fix → PR) should be
-  laid out as an explicit DAG with a stated stop condition up front, and should NOT all run
-  inside one long coordinator session with repeated poll loops — split by stage, update
-  HANDOFF, let the next session resume. See `feedback_dag_task_breakdown` and
-  `feedback_split_long_sessions`. This session did not fully follow that (all 3 review
-  rounds + fixes ran in one session, per the user's own real-time correction mid-session) —
-  future Track D work should split at each review-round boundary instead.
+  not just a different invocation, per `feedback_agent_model_routing`.
+- Review rounds are **capped, and every finding gets a YAGNI pass before any fix is
+  dispatched** — this repo's guard exists to stop an *AI agent's honest mistake* from
+  reaching production (`docs/12-db-execution-safety-contract.md` L9, "low-reasoning agent"
+  framing), not to defend against a sophisticated external attacker; this is an internal
+  tool. Findings reachable by a plausible agent mistake get fixed; findings that require
+  deliberate attacker-grade construction (crafted Unicode, secret-exfiltration chains,
+  infra-level MITM) get recorded as documented limitations, not fixed. See
+  `feedback_security_rigor_scope` for the full reasoning — this is *why* review rounds
+  stopped multiplying, not because a round-count cap was imposed for its own sake.
+- Three review rounds ran (T-R1 → fix → T-R2 → fix → T-R3 → fix), each a **fresh
+  independent dispatch with no context from the implementation or prior review sessions**
+  (AGENTS.md rule 10). T-R3 (round 3) returned **PASS, mergeable**, with only one
+  non-blocking category-1 (agent-mistake-reachable) finding, which was fixed (see below).
 
-**Review round summary** (full reports posted as PR #69 comments; condensed history in the
-"Historical: Issue #20 implemented" section below this one):
-- **T-R1** (in-process fresh Claude subagent, two-phase PR-body-then-diff): REQUEST
-  CHANGES, 4 blocking (B1-B4: public `metadata=`/`environ=` override seam defeating
-  attestation; partially-resolved registry silently disabling the prod/test collision
-  check; case-sensitive collision comparison; underscore-aliased connector re-exports
-  invisible to the boundary check) + 4 non-blocking (N1-N4), all fixed.
-- **T-R2** (orca-cli omp, glm-5.3 high): REQUEST CHANGES, 2 new blocking — both residuals
-  of the T-R1 fix commits themselves (F1: `connector_overrides` param B1's fix left
-  standing, still let a caller fabricate attestation + capture the secret connection value;
-  F2: literal-masking missed `"`-quoted/`$...$`-quoted forms, leaking into audit preview) —
-  + 3 non-blocking (F3-F5), all fixed.
-- **T-R3** (orca-cli omp, glm-5.3 high): **PASS, mergeable**, no blocking findings. 1
-  non-blocking finding (NF-1: PostgreSQL `E'...'` escape-handling gap in audit-preview
-  masking), fixed. 5 additional findings (NF-2..NF-6) explicitly judged out of scope
-  (attacker-grade or deliberate/contract-conformant design) and left unfixed — recorded,
-  not silently dropped; NF-4 in particular is a real deployment-fact note (see below).
+**T-R1 (omp equivalent — actually run as an in-process fresh Claude subagent, two-phase
+PR-body-then-diff pattern; T-R2/T-R3 switched to orca-cli omp mid-session per user
+instruction): REQUEST CHANGES, 4 blocking (B1-B4) + 4 non-blocking (N1-N4).** All 8 fixed
+in commits `e772894`/`fdfd75e`/`3f12bd0`/`26753cb`/`0d1d324`:
+- B1: `open_readonly`/`open_test_readwrite` accepted public `metadata=`/`environ=` kwargs
+  that let a caller override the expected-target registry and inject a raw connection
+  string, fully defeating attestation. Removed from the public signature.
+- B2: registry collision/ambiguity check only ran over entries with *both* identity fields
+  resolved, so a deployment with only the test entry resolved skipped collision-checking
+  entirely. Fixed: writable opens now block whenever any production-environment registry
+  entry remains unresolved.
+- B3: registry-to-registry collision comparison was case-sensitive, so a case-variant
+  registry (conventionally case-insensitive for MSSQL server/db names) passed silently.
+  Fixed: collision/ambiguity comparisons case-fold; attestation itself stays strict.
+- B4: `db_guard` re-exported connector classes under underscore aliases
+  (`_MssqlConnector` etc.), invisible to both the static import-boundary check and the
+  regression test (which only checked the unprefixed names). Fixed: re-exports removed,
+  explicit `__all__` added, boundary check + test rewritten to check by object identity.
+- N1-N4: PostgreSQL identity probe's host component moved server-side; zero-width Unicode
+  rejected in registry shape validation; blocked production read-opens now also audited;
+  `_connection` private-attribute reachability documented as an accepted P-2 convention.
+
+**T-R2 (orca-cli omp, glm-5.3 high): REQUEST CHANGES, 2 new blocking (F1-F2, both residuals
+of the T-R1 fix commits) + 3 non-blocking (F3-F5).** Fixed in
+`3862d7c`/`2aa313a`/`8a03b67`:
+- F1: `connector_overrides` — a public factory parameter B1's fix left standing — was
+  consumed with zero validation, letting a caller-supplied object fabricate attestation
+  (matching `identity_probe()` return values) *and* capture the resolved secret connection
+  value. Removed from the public signature entirely.
+- F2: the literal-masking normalization masked single-quoted strings but left
+  `"`-quoted/`[`-quoted and `$...$` dollar-quoted (PostgreSQL) literals unmasked, leaking
+  verbatim into the audit `sql_preview`/`statement_hash`. Fixed: masking extended to both
+  forms.
+- F3-F5 (all fixed, judged genuinely in-scope not over-hardening): PostgreSQL port
+  attestation moved server-side (was client-dialed, same-IP port-forward gap); registry
+  shape validation switched from a zero-width-only blocklist to a printable-ASCII
+  whitelist (closes broader Unicode-confusable collision-evasion); one missed
+  `from scripts import db` alias spelling added to the boundary check.
+
+**T-R3 (orca-cli omp, glm-5.3 high): PASS, mergeable — no blocking findings.** One
+non-blocking category-1 finding (NF-1), fixed in `198345c`: PostgreSQL `E'...'`
+backslash-escaped strings weren't escape-aware in the tokenizer, so an escaped quote
+(`E'O\'BRIEN'`) closed the literal early and the trailing fragment leaked into the audit
+preview — real (an agent copy-pasting a legitimate query with an escaped apostrophe hits
+it with zero adversarial intent) but non-blocking (the resulting malformed statement always
+classifies `unknown` and gets blocked pre-driver, so no wrong execution ever occurs — only
+the audit-preview text was affected). Fixed by making the E/N-prefixed string consumer
+backslash-escape-aware.
+
+**T-R3 also reported 5 findings explicitly judged out of scope and left unfixed (YAGNI —
+see `feedback_security_rigor_scope`), recorded here so they aren't silently lost or
+re-litigated:**
+- NF-2: `SELECT <side-effecting-function>()` classifies `read` — guarding this needs
+  function-body parsing, an explicit design non-goal (docs/12 L427); the contract's primary
+  control for this case is the server-enforced read-only credential, not the classifier.
+- NF-3: the driver-boundary static check scans `scripts/**` only (matches repo convention
+  and plan T-5's stated scope; informational only).
+- NF-4: MSSQL's attested identity (`@@SERVERNAME`/`DB_NAME()`) has no port/IP component —
+  **a real deployment-fact hazard for whoever supplies the expected-target values**: the
+  server_identity value must be something that actually distinguishes environments (e.g. a
+  distinguishing instance/FQDN), not a bare default instance name that could collide across
+  isolated networks. **Flag this explicitly when requesting the expected-target values
+  below.**
+- NF-5: the raw driver exception remains reachable via `e.__context__` (never printed or
+  logged, but programmatically walkable) — no fix needed, no surface exposes it.
+- NF-6: batch classification's transaction-control carve-out was checked against the
+  execution plan's P-5 text and found to differ in wording but be substance-conformant to
+  the actual design contract (docs/12) — verified deliberate and correct, not a defect.
 
 **Consumption for #18/#19/#21/#22:** `from scripts.db.db_guard import open_readonly,
-open_test_readwrite`. `open_readonly` → `ReadOnlySession` (fetch-only). `open_test_readwrite`
-→ `TestWriteSession` (fetch + one guarded `execute`, canonical test read-write profile
-only, after attestation).
+open_test_readwrite`. `open_readonly` → `ReadOnlySession` (fetch-only, no mutation API on
+the object at all). `open_test_readwrite` → `TestWriteSession` (fetch + one guarded
+`execute`, succeeds only against the canonical test read-write profile after attestation).
 
-**Remaining known uncertainty, requested from the user in the Issue #20 comment (not
-blockers, not silently assumed):**
-1. Real `server_identity`/`database_identity` values for each canonical profile
-   (`scripts/db/target_metadata.py` ships unresolved by design, P-3) — **and** per T-R3's
-   NF-4, the MSSQL `server_identity` value must actually distinguish environments (not a
-   bare default instance name — two default instances on isolated networks would attest
-   identically otherwise).
-2. Confirmation the production credential is server-enforced read-only at the
-   account/server level (AC2 — can't be runtime-verified without an actual write attempt
-   against production).
-3. Real MSSQL/PostgreSQL live-integration testing deferred (approved test infra not yet
-   available) — explicit non-goal of this PR.
+**Remaining known uncertainty, carried forward for the user (not blockers, not silently
+assumed):**
+1. The expected-target identity registry (`scripts/db/target_metadata.py`) ships fully
+   unresolved by design (P-3) — real values are a deployment fact only the user can supply.
+   **Please provide, for each canonical profile, the real expected `server_identity` /
+   `database_identity` pair** (and per NF-4 above, make sure the MSSQL `server_identity`
+   value actually distinguishes environments — not a bare default instance name).
+2. AC2 (server-enforced read-only production credential) cannot be runtime-verified
+   (verifying it would require an actual write attempt against production) — it's a
+   deployment fact documented in `docs/12`, not code. **Please confirm the production
+   credential is in fact provisioned read-only at the server/account level.**
+3. Real MSSQL/PostgreSQL live-integration testing is deferred until approved test
+   infrastructure exists (out of scope for this PR per its stated non-goals).
+4. Consumer wiring into #18/#19/#21/#22 is each issue's own completion criterion, not this
+   PR's.
 
-**After merge**, this repo's precedent (#61/#62/#64/#65/#67/#68) is an owner-level
-post-merge review pass before treating the issue as fully complete — budget for that in the
-next session too.
+**PR opened, review comments posted, awaiting the user's explicit merge instruction —
+do not merge without it (`feedback_no_auto_merge`). After merge, this repo's precedent
+(#61/#62/#64/#65/#67/#68) is an owner-level post-merge review pass before treating the
+issue as fully complete — budget for that in the next session too.**
+
+## Historical: Issue #20 implemented (T-1..T-I1), all gates green — needs T-R1/T-R2 independent reviews before PR
 
 **Issue #20 (DB execution safety guard) is implemented and committed on branch
 `hjung3113/issue20-plan` in worktree `/Users/hyojung/orca/workspaces/agent-migration-pipeline/issue20-plan`,

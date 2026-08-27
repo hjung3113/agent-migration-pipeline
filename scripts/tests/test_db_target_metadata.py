@@ -144,6 +144,16 @@ def test_validate_target_metadata_reports_identity_whitespace(
     assert any("mssql-prod-ro" in error and field in error for error in errors)
 
 
+def test_zero_width_identity_characters_are_rejected() -> None:
+    targets = _resolved_targets()
+    targets["mssql-prod-ro"] = ExpectedTarget("prod\u200b-sql", "app")
+    errors = validate_target_metadata(profiles=PROFILES, targets=targets)
+
+    assert any("zero-width" in error and "mssql-prod-ro" in error for error in errors)
+    with pytest.raises(TargetMetadataError):
+        get_expected_target("mssql-prod-ro", targets=targets)
+
+
 def test_unresolved_shipped_registry_is_a_valid_transition_state() -> None:
     assert validate_target_metadata() == []
 

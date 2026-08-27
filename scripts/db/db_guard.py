@@ -224,13 +224,12 @@ def _open_session(
             expected_target,
         )
     except GuardBlockedError as blocked:
-        if writable:
-            _emit_best_effort(
-                context,
-                classification=None,
-                outcome="blocked",
-                reason=blocked.reason,
-            )
+        _emit_best_effort(
+            context,
+            classification=None,
+            outcome="blocked",
+            reason=blocked.reason,
+        )
         raise
 
 
@@ -333,6 +332,9 @@ class _SessionBase:
         "_expected_target",
         "_closed",
     )
+    # P-2 treats underscore attributes as module-private by convention. The
+    # capability API is the supported seam; this is not a runtime attribute
+    # firewall for callers that deliberately violate Python privacy.
 
     def __init__(
         self,

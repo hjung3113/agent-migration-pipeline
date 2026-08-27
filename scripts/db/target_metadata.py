@@ -33,6 +33,11 @@ class ExpectedTarget:
     database_identity: str
 
 
+_ZERO_WIDTH_CHARACTERS = frozenset(
+    "\u180e\u200b\u200c\u200d\u2060\ufeff"
+)
+
+
 EXPECTED_TARGETS: Mapping[str, ExpectedTarget] = MappingProxyType(
     {
         "mssql-prod-ro": ExpectedTarget("", ""),
@@ -65,7 +70,11 @@ def get_expected_target(
         ("server_identity", target.server_identity),
         ("database_identity", target.database_identity),
     ):
-        if not isinstance(value, str) or not value.strip():
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or _contains_zero_width_character(value)
+        ):
             raise TargetMetadataError(
                 f"missing target metadata for profile '{profile_name}': {field_name}"
             )
@@ -106,6 +115,11 @@ def validate_target_metadata(
             elif value != value.strip():
                 errors.append(
                     f"{field_name} has surrounding whitespace for profile: "
+                    f"{profile_name}"
+                )
+            elif _contains_zero_width_character(value):
+                errors.append(
+                    f"{field_name} contains zero-width characters for profile: "
                     f"{profile_name}"
                 )
 
@@ -166,3 +180,7 @@ def validate_target_metadata(
 def _collision_pair(target: ExpectedTarget) -> tuple[str, str]:
     """Normalize identity only for registry-to-registry collision checks."""
     return target.server_identity.casefold(), target.database_identity.casefold()
+
+
+def _contains_zero_width_character(value: str) -> bool:
+    return any(character in _ZERO_WIDTH_CHARACTERS for character in value)

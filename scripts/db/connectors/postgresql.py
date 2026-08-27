@@ -41,9 +41,14 @@ class PostgresqlConnector:
             self.fetch_one(connection, "SELECT current_database()"),
             "database",
         )
-        host = self._connection_attribute(connection, "host")
+        # connection.info.host is the client-supplied route and may be a DNS
+        # alias. Use the server-reported address for the attested identity.
+        host = self._probe_value(
+            self.fetch_one(connection, "SELECT inet_server_addr()"),
+            "server",
+        )
         port = self._connection_attribute(connection, "port")
-        if not isinstance(host, str) or not host.strip() or port is None:
+        if port is None:
             raise ConnectorError("postgresql connection identity is unavailable")
         port_text = str(port).strip()
         if not port_text:

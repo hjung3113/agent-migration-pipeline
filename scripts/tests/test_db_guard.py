@@ -489,6 +489,20 @@ def test_open_test_failure_emits_an_audit_event_with_null_operation_class() -> N
     assert event["reason"] == "attestation-mismatch"
 
 
+def test_readonly_open_failure_emits_an_audit_event() -> None:
+    connector = FakeConnector(
+        identity=FakeIdentity(ENGINE_MSSQL, "wrong-server", "app")
+    )
+    events = _events()
+    with pytest.raises(db_guard.GuardBlockedError):
+        _open_readonly(connector, events)
+
+    event = _event_lines(events)[-1]
+    assert event["operation_class"] is None
+    assert event["outcome"] == "blocked"
+    assert event["reason"] == "attestation-mismatch"
+
+
 def test_open_resolution_failure_is_audited_without_echoing_connection_value() -> None:
     connector = FakeConnector()
     events = _events()

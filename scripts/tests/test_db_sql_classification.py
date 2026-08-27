@@ -280,3 +280,13 @@ def test_double_and_dollar_quoted_literals_are_masked_from_preview_and_hash(
     assert secret not in first.preview
     assert first.preview == second.preview
     assert first.statement_hash == second.statement_hash
+
+
+@pytest.mark.parametrize("prefix", ["E", "N"])
+def test_prefixed_string_escaped_quote_masks_the_entire_literal(prefix: str) -> None:
+    sql = rf"SELECT * FROM t WHERE name = {prefix}'O\'SECRET_SENTINEL'"
+    result = classify_batch(sql)
+
+    assert result.operation_class == "read"
+    assert "SECRET_SENTINEL" not in result.preview
+    assert "SECRET_SENTINEL" not in redact(sql)

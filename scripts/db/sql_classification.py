@@ -226,7 +226,9 @@ def _tokenize(sql: str) -> tuple[list[_Token], bool]:
                 continue
 
         if char in "NnEe" and index + 1 < length and sql[index + 1] == "'":
-            token, index, closed = _consume_quoted(sql, index + 1)
+            token, index, closed = _consume_quoted(
+                sql, index + 1, backslash_escapes=True
+            )
             if not closed:
                 malformed = True
                 break
@@ -272,11 +274,16 @@ def _consume_block_comment(sql: str, start: int) -> tuple[int, bool]:
     return len(sql), False
 
 
-def _consume_quoted(sql: str, start: int) -> tuple[_Token, int, bool]:
+def _consume_quoted(
+    sql: str, start: int, *, backslash_escapes: bool = False
+) -> tuple[_Token, int, bool]:
     opener = sql[start]
     closer = "]" if opener == "[" else opener
     index = start + 1
     while index < len(sql):
+        if backslash_escapes and sql[index] == "\\":
+            index += 2
+            continue
         if sql[index] == closer:
             if index + 1 < len(sql) and sql[index + 1] == closer:
                 index += 2

@@ -76,8 +76,9 @@ def validate_target_metadata(
     *,
     profiles: Mapping[str, ConnectionProfile] = PROFILES,
     targets: Mapping[str, ExpectedTarget] = EXPECTED_TARGETS,
+    require_production_resolved: bool = False,
 ) -> list[str]:
-    """Report registry shape defects while allowing unresolved empty values."""
+    """Report registry shape defects, optionally requiring prod identities."""
     errors: list[str] = []
     profile_names = set(profiles)
     target_names = set(targets)
@@ -115,6 +116,16 @@ def validate_target_metadata(
             and target.database_identity
         ):
             usable[profile_name] = target
+
+    if require_production_resolved:
+        for profile_name in sorted(profile_names):
+            if profiles[profile_name].environment != ENVIRONMENT_PRODUCTION:
+                continue
+            if profile_name not in usable:
+                errors.append(
+                    "production target metadata is unresolved for profile: "
+                    f"{profile_name}"
+                )
 
     production_pairs = {
         (target.server_identity, target.database_identity): profile_name

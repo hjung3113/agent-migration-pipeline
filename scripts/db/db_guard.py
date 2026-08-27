@@ -170,6 +170,7 @@ def _open_session(
             if validate_target_metadata(
                 profiles=PROFILES,
                 targets=_EXPECTED_TARGETS,
+                require_production_resolved=writable,
             ):
                 raise GuardBlockedError(
                     "missing-target-metadata",

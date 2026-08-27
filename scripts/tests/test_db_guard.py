@@ -319,6 +319,21 @@ def test_full_registry_preflight_blocks_both_misconfigured_test_registry_and_env
     assert connector.connect_calls == []
 
 
+def test_unresolved_production_target_blocks_test_write_preflight() -> None:
+    metadata = dict(TARGETS)
+    metadata["mssql-prod-ro"] = ExpectedTarget("", "")
+    metadata["mssql-test-rw"] = ExpectedTarget("prod-server", "app")
+    connector = FakeConnector(
+        identity=FakeIdentity(ENGINE_MSSQL, "prod-server", "app")
+    )
+
+    with pytest.raises(db_guard.GuardBlockedError) as raised:
+        _open_test(connector, metadata=metadata)
+
+    assert raised.value.reason == "missing-target-metadata"
+    assert connector.connect_calls == []
+
+
 def test_target_registry_key_drift_is_preflight_failure() -> None:
     metadata = dict(TARGETS)
     del metadata["postgres-test-rw"]

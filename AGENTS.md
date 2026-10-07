@@ -120,11 +120,20 @@ Discover -> Specify -> Grade Evidence -> Human Gate if needed
          -> PASS or Process/Rule Fix -> Repeat
 ```
 
+## Workflow operations
+
+Playbook for running issues with workers (design gate, briefs, host verification, one final independent review,
+PR, cleanup): `.claude/skills/issue-wave-conductor/`. Model routing comes from the shared
+`orca-dispatch-recipes/routing.tsv`. Merging stays the user's call.
+
 ## Handoff rule
 
 `HANDOFF.md` at the repo root is the single handoff file. Always update it
 in place at the end of a session; never create a second handoff file
 (dated, numbered, or otherwise). It is committed to Git, not gitignored.
+It holds current state only (what is in flight, what waits on the user,
+carried-forward gaps); replace finished entries instead of appending
+history — Git keeps the history.
 
 ## Stop conditions
 

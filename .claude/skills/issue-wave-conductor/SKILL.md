@@ -35,7 +35,9 @@ idleness. Close a completed worker's terminal immediately; keep its state JSON f
 0. **Design gate (AGENTS.md rule 13).** For lock-in risk medium or higher, the first pass produces the design or
    execution-plan artifact only — re-run the 7-item "구현 시작 전 체크" from `migration/ISSUES-PLAN-DRAFT.md`
    against current `origin/main`, record judgment calls with design-doc citations and open questions, commit the
-   plan on the issue branch, then **stop and report**. Do not launch implementation until the user explicitly says
+   plan on the issue branch, then **stop and report**. Keep the plan to about 200 lines: one line per passing
+   gate item, judgment calls with citations, the task list with files and tests, reopen triggers. Do not restate
+   the design doc or run a separate self-review pass of the plan; the conductor checks it against the code. Do not launch implementation until the user explicitly says
    to start building. An implementer may never settle an undecided design point; it goes back to the user.
 1. **Brief** (`$WAVE_BRIEFS/<n>-task.md`): re-verify every fact on current `origin/main` (paths, line numbers,
    existing helpers, the owning contract) — issue text goes stale. Sections: *Facts (verified on main)* / *Do* /

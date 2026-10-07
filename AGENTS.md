@@ -131,6 +131,9 @@ PR, cleanup): `.claude/skills/issue-wave-conductor/`. Model routing comes from t
 `HANDOFF.md` at the repo root is the single handoff file. Always update it
 in place at the end of a session; never create a second handoff file
 (dated, numbered, or otherwise). It is committed to Git, not gitignored.
+It holds current state only (what is in flight, what waits on the user,
+carried-forward gaps); replace finished entries instead of appending
+history — Git keeps the history.
 
 ## Stop conditions
 

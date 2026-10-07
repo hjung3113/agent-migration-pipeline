@@ -28,3 +28,5 @@ coverage/
 
 # issue-wave-conductor scratch (briefs, worker reports, review/verify notes)
 .review/
+
+.local/mssql-inspection/

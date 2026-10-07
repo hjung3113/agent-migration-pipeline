@@ -42,6 +42,9 @@ Inventory data semantics and hidden business logic in MSSQL before any PostgreSQ
 4. **[Output]** Populate the structure of `docs/templates/db-dependency-report.md` for `migration/features/{feature-id}/db-dependency-report.md`; do not translate T-SQL to PostgreSQL syntax merely because an object exists.
 5. **[Output]** If behavior affects business semantics or data integrity but ownership in the target is undecided, flag it as a design decision/open question; otherwise mark the target concern as eligible for later design.
 6. **[Output]** If any material DB behavior is unverifiable, return `PARTIAL` or `BLOCKED` with residual uncertainty for `docs/05-open-questions.md`; otherwise return the completed report body to the coordinator.
+7. **[Input]** When live MSSQL evidence is available, capture it with `scripts/db/mssql_inspect.py snapshot --profile mssql-prod-ro` (the canonical live-MSSQL evidence path) instead of ad-hoc queries, and record the capture id, scope, and `capabilities` statuses in the report.
+8. **[Output]** Check capture completeness (`capabilities`/`warnings`) before interpreting absence: a zero-row result or an `UNAVAILABLE`/`PARTIAL`/`BLOCKED` category is evidence of incomplete visibility, not proof that no object or logic exists.
+9. **[Output]** When required objects, definitions, or jobs remain `PARTIAL`/`BLOCKED`, return conclusions that preserve that uncertainty instead of closing them, and never copy credentials, raw captures, or unrestricted sensitive definitions into `db-dependency-report.md` or the coordinator handoff; reference capture ids and definition hashes instead.
 
 ## Stop handling
 

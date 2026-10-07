@@ -89,7 +89,7 @@ def full_rows() -> dict[str, list[tuple]]:
             (
                 601, "dbo", "usp_get_customer", "P", "SQL_STORED_PROCEDURE",
                 "2020-01-01T00:00:00", "2021-06-01T00:00:00",
-                0, 0, None, DEFINITION_TEXT,
+                0, 0, 1, DEFINITION_TEXT,
             )
         ],
         "triggers": [
@@ -98,7 +98,7 @@ def full_rows() -> dict[str, list[tuple]]:
         "jobs": [
             (
                 "8F3A-UUID", "Nightly load", 1, 1, "load", "TSQL", "app",
-                1, 2, 1, 1, 1, "000000", 20260107, 30000,
+                1, 2, 1, 1, 1, "000000", 20260107, 30000, 7, "Weekly",
             )
         ],
         "job_step_commands": [("Nightly load", 1, "load", JOB_COMMAND)],
@@ -110,6 +110,8 @@ ONE_ROWS: dict[str, tuple] = {
     "server_properties": ("15.0.2000.5", "RTM", "Developer Edition (64-bit)", 3),
     "database_properties": ("app", 150, "SQL_Latin1_General_CP1_CI_AS"),
     "principal": ("DOMAIN\\ro_inspector",),
+    "database_visibility": (1,),
+    "agent_visibility": (1,),
 }
 
 
@@ -289,7 +291,6 @@ def test_full_snapshot_matches_golden_and_is_deterministic(tmp_path: Path) -> No
                 "is_nullable": False,
                 "is_identity": True,
                 "is_computed": False,
-                "computed_definition": None,
                 "computed_is_persisted": False,
                 "collation_name": None,
                 "identity_seed": "1000",
@@ -336,6 +337,11 @@ def test_full_snapshot_matches_golden_and_is_deterministic(tmp_path: Path) -> No
                     "constraint_name": "CK_order_qty",
                     "is_disabled": False,
                     "is_not_trusted": False,
+                    "definition_status": "AVAILABLE",
+                    "definition_reason": None,
+                    "definition_sha256": hashlib.sha256(
+                        "([qty]>(0))".encode("utf-8")
+                    ).hexdigest(),
                     "definition": "([qty]>(0))",
                     "schema_name": "dbo",
                     "table_name": "sales_order",
@@ -347,6 +353,11 @@ def test_full_snapshot_matches_golden_and_is_deterministic(tmp_path: Path) -> No
                     "object_id": 501,
                     "constraint_name": "DF_order_qty",
                     "is_system_named": False,
+                    "definition_status": "AVAILABLE",
+                    "definition_reason": None,
+                    "definition_sha256": hashlib.sha256(
+                        "((0))".encode("utf-8")
+                    ).hexdigest(),
                     "definition": "((0))",
                     "schema_name": "dbo",
                     "table_name": "sales_order",
@@ -363,7 +374,6 @@ def test_full_snapshot_matches_golden_and_is_deterministic(tmp_path: Path) -> No
                     "is_primary_key": False,
                     "is_unique_constraint": False,
                     "has_filter": False,
-                    "filter_definition": None,
                     "schema_name": "dbo",
                     "table_name": "customer",
                     "columns": [
@@ -383,7 +393,7 @@ def test_full_snapshot_matches_golden_and_is_deterministic(tmp_path: Path) -> No
                 "modified": "2021-06-01T00:00:00",
                 "is_encrypted": False,
                 "is_recompiled": False,
-                "execute_as": None,
+                "execute_as_principal_id": 1,
                 "definition_status": "AVAILABLE",
                 "definition_reason": None,
                 "definition_sha256": definition_sha,
@@ -424,6 +434,8 @@ def test_full_snapshot_matches_golden_and_is_deterministic(tmp_path: Path) -> No
                 "schedule_active_start_time": "000000",
                 "next_run_date": 20260107,
                 "next_run_time": 30000,
+                "schedule_id": 7,
+                "schedule_name": "Weekly",
                 "command": JOB_COMMAND,
             }
         ],
@@ -506,7 +518,7 @@ def test_only_mssql_prod_ro_profile_accepted(
 ) -> None:
     connector = ScriptedConnector()
     with pytest.raises(SystemExit) as excinfo:
-        mi.main(base_argv(tmp_path, "--profile", profile))
+        run_tool(base_argv(tmp_path, "--profile", profile), connector)
     assert excinfo.value.code == 1
     assert connector.connect_calls == []
 
@@ -520,7 +532,7 @@ def test_only_mssql_prod_ro_profile_accepted(
     ("expect_database", "failing", "expected_code"),
     [
         ("otherdb", frozenset(), 2),
-        ("APP", frozenset(), 0),
+        ("APP", frozenset(), 2),
         ("app", frozenset({"db_name"}), 2),
     ],
 )
@@ -637,6 +649,11 @@ def test_job_step_text_is_opt_in(
     jobs_records = snapshot["inventory"]["agent_jobs"]
     if expected_jobs == "NOT_REQUESTED":
         assert "jobs" not in executed
+        assert "agent_visibility" not in executed
+        assert all(
+            "msdb" not in sql.lower()
+            for _name, sql, _params in (*connector.fetch_one_calls, *connector.fetch_all_calls)
+        )
         assert jobs_records == []
     else:
         assert "jobs" in executed
@@ -652,9 +669,266 @@ def test_job_step_text_is_opt_in(
 def test_job_step_text_without_jobs_is_a_usage_error(tmp_path: Path) -> None:
     connector = ScriptedConnector()
     with pytest.raises(SystemExit) as excinfo:
-        mi.main(base_argv(tmp_path, "--include-job-step-text"))
+        run_tool(base_argv(tmp_path, "--include-job-step-text"), connector)
     assert excinfo.value.code == 1
     assert connector.connect_calls == []
+
+
+# ---------------------------------------------------------------------------
+# 14. Visibility preconditions gate COMPLETE (review F1)
+# ---------------------------------------------------------------------------
+
+
+def test_visibility_preconditions_gate_complete(tmp_path: Path) -> None:
+    one_rows = dict(ONE_ROWS)
+    one_rows["database_visibility"] = (0,)
+    code, _connector = run_tool(
+        base_argv(tmp_path, "--include-jobs", "--include-job-step-text"),
+        ScriptedConnector(one_rows_by_query=one_rows),
+    )
+    assert code == 0
+    snapshot, _capture_dir = load_snapshot(tmp_path)
+    capabilities = snapshot["capabilities"]
+    assert capabilities["database_catalog"] == "PARTIAL"
+    assert capabilities["module_definitions"] == "PARTIAL"
+    assert capabilities["agent_jobs"] == "COMPLETE"
+    assert capabilities["agent_job_step_text"] == "COMPLETE"
+    assert snapshot["capture"]["visibility"]["database_view_definition"] is False
+    assert any(
+        warning.startswith("database visibility precondition unproven")
+        for warning in snapshot["warnings"]
+    )
+
+
+def test_failed_visibility_probe_is_unproven_and_partial(tmp_path: Path) -> None:
+    connector = ScriptedConnector(failing_queries=frozenset({"agent_visibility"}))
+    code, _connector = run_tool(
+        base_argv(tmp_path, "--include-jobs"), connector
+    )
+    assert code == 0
+    snapshot, _capture_dir = load_snapshot(tmp_path)
+    assert snapshot["capture"]["visibility"]["agent_jobs"] is None
+    assert snapshot["capabilities"]["agent_jobs"] == "PARTIAL"
+    assert snapshot["capabilities"]["database_catalog"] == "COMPLETE"
+    assert any(
+        "agent job visibility precondition unproven" in warning
+        for warning in snapshot["warnings"]
+    )
+    assert any(
+        "capture query 'agent_visibility' failed" in warning
+        for warning in snapshot["warnings"]
+    )
+
+
+def test_blocked_jobs_do_not_add_visibility_warning(tmp_path: Path) -> None:
+    one_rows = dict(ONE_ROWS)
+    one_rows["agent_visibility"] = (0,)
+    connector = ScriptedConnector(
+        failing_queries=frozenset({"jobs"}),
+        one_rows_by_query=one_rows,
+    )
+    code, _connector = run_tool(base_argv(tmp_path, "--include-jobs"), connector)
+    assert code == 0
+    snapshot, _capture_dir = load_snapshot(tmp_path)
+    assert snapshot["capabilities"]["agent_jobs"] == "BLOCKED"
+    assert not any(
+        "visibility precondition unproven" in warning
+        for warning in snapshot["warnings"]
+    )
+
+
+# ---------------------------------------------------------------------------
+# 15. Documented catalog columns only (review F2)
+# ---------------------------------------------------------------------------
+
+
+def test_module_queries_use_documented_catalog_columns() -> None:
+    modules_sql = mi.QUERY_BY_NAME["modules"].sql
+    triggers_sql = mi.QUERY_BY_NAME["triggers"].sql
+    assert "m.is_encrypted" not in modules_sql
+    assert "execute_as_desc" not in modules_sql
+    assert "m.execute_as_principal_id" in modules_sql
+    assert "OBJECTPROPERTY(" in modules_sql
+    assert "m.is_encrypted" not in triggers_sql
+    assert "OBJECTPROPERTY(" in triggers_sql
+
+
+def test_ddl_trigger_encryption_evidence_is_null_and_unknown(tmp_path: Path) -> None:
+    rows = full_rows()
+    rows["triggers"] = rows["triggers"] + [
+        (
+            702, None, "TR_ddl_audit", "SQL_TRIGGER", 0, 0, 0,
+            "CREATE_TABLE", None, None,
+        ),
+    ]
+    code, _connector = run_tool(base_argv(tmp_path), ScriptedConnector(rows_by_query=rows))
+    assert code == 0
+    snapshot, _capture_dir = load_snapshot(tmp_path)
+    record = next(
+        r for r in snapshot["inventory"]["triggers"] if r["object_id"] == 702
+    )
+    assert record["schema_name"] is None
+    assert record["is_encrypted"] is None
+    assert record["definition_status"] == "UNAVAILABLE"
+    assert record["definition_reason"] == "UNKNOWN"
+    dml = next(
+        r for r in snapshot["inventory"]["triggers"] if r["object_id"] == 701
+    )
+    assert dml["is_encrypted"] is False
+
+
+# ---------------------------------------------------------------------------
+# 16. Hidden catalog expressions are unavailable evidence (review F3)
+# ---------------------------------------------------------------------------
+
+
+def test_hidden_catalog_expressions_are_unavailable_and_partial(tmp_path: Path) -> None:
+    rows = full_rows()
+    rows["columns"] = rows["columns"] + [
+        (
+            101, 2, "total_qty", "int", 4, 10, 0, 1, 0, 1,
+            "([qty]*[unit_price])", 1, None, None, None,
+        ),
+        (
+            101, 3, "hidden_total", "int", 4, 10, 0, 1, 0, 1,
+            None, None, None, None, None,
+        ),
+    ]
+    rows["indexes"] = rows["indexes"] + [
+        (
+            101, 3, "IX_filtered", "NONCLUSTERED", 0, 0, 0, 1, None,
+            "dbo", "customer", 1, "customer_name", 0,
+        )
+    ]
+    rows["check_constraints"] = [
+        (401, "CK_hidden", 0, 0, None, "dbo", "sales_order", "qty")
+    ]
+    rows["default_constraints"] = [
+        (501, "DF_hidden", 0, None, "dbo", "sales_order", "qty")
+    ]
+    code, _connector = run_tool(base_argv(tmp_path), ScriptedConnector(rows_by_query=rows))
+    assert code == 0
+    snapshot, _capture_dir = load_snapshot(tmp_path)
+    columns = {record["name"]: record for record in snapshot["inventory"]["columns"]}
+    visible = columns["total_qty"]
+    assert visible["definition_status"] == "AVAILABLE"
+    assert visible["definition"] == "([qty]*[unit_price])"
+    assert visible["definition_sha256"] == hashlib.sha256(
+        "([qty]*[unit_price])".encode("utf-8")
+    ).hexdigest()
+    hidden = columns["hidden_total"]
+    assert hidden["definition_status"] == "UNAVAILABLE"
+    assert hidden["definition_reason"] == "UNKNOWN"
+    assert "definition" not in hidden
+    assert "definition_sha256" not in hidden
+    assert "definition_status" not in columns["customer_id"]
+    indexes = snapshot["inventory"]["integrity"]["indexes"]
+    assert indexes[0]["index_name"] == "IX_customer_name"
+    assert "definition_status" not in indexes[0]
+    assert indexes[1]["index_name"] == "IX_filtered"
+    assert indexes[1]["has_filter"] is True
+    assert indexes[1]["definition_status"] == "UNAVAILABLE"
+    check = snapshot["inventory"]["integrity"]["check_constraints"][0]
+    assert check["definition_status"] == "UNAVAILABLE"
+    assert "definition" not in check
+    default = snapshot["inventory"]["integrity"]["default_constraints"][0]
+    assert default["definition_status"] == "UNAVAILABLE"
+    assert snapshot["capabilities"]["database_catalog"] == "PARTIAL"
+    assert snapshot["capabilities"]["module_definitions"] == "COMPLETE"
+    assert any(
+        "catalog expression(s) unavailable" in warning
+        for warning in snapshot["warnings"]
+    )
+
+
+# ---------------------------------------------------------------------------
+# 17. Usage errors never echo rejected values (review F4)
+# ---------------------------------------------------------------------------
+
+
+def test_usage_error_does_not_echo_rejected_value(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    connector = ScriptedConnector()
+    secret_value = f"Server=prod;Uid=svc;PWD={SENTINEL_OUTPUT_SECRET}"
+    for extra in (
+        ["--profile", secret_value],
+        ["--no-such-flag", secret_value],
+    ):
+        with pytest.raises(SystemExit) as excinfo:
+            run_tool(base_argv(tmp_path, *extra), connector)
+        assert excinfo.value.code == 1
+        captured = capsys.readouterr()
+        assert SENTINEL_OUTPUT_SECRET not in captured.err
+        assert SENTINEL_OUTPUT_SECRET not in captured.out
+        assert captured.err.startswith("usage:")
+    assert connector.connect_calls == []
+    assert not (tmp_path / "captures").exists()
+
+
+# ---------------------------------------------------------------------------
+# 18. Job/schedule linkage is projected and distinguished (review F5)
+# ---------------------------------------------------------------------------
+
+
+def test_job_schedule_linkage_survives_dedupe(tmp_path: Path) -> None:
+    rows = full_rows()
+    step = (
+        "8F3A-UUID", "Nightly load", 1, 1, "load", "TSQL", "app",
+        1, 2, 1, 1, 1, "000000", 20260107, 30000,
+    )
+    rows["jobs"] = [step + (7, "Weekly"), step + (9, "Weekly")]
+    code, _connector = run_tool(
+        base_argv(tmp_path, "--include-jobs"),
+        ScriptedConnector(rows_by_query=rows),
+    )
+    assert code == 0
+    snapshot, _capture_dir = load_snapshot(tmp_path)
+    job_records = snapshot["inventory"]["agent_jobs"]
+    assert len(job_records) == 2
+    assert [record["schedule_id"] for record in job_records] == [7, 9]
+    assert all(record["schedule_name"] == "Weekly" for record in job_records)
+
+
+# ---------------------------------------------------------------------------
+# 19. Step text without its job is never COMPLETE (review F6)
+# ---------------------------------------------------------------------------
+
+
+def test_step_text_without_jobs_is_partial_without_orphans(tmp_path: Path) -> None:
+    connector = ScriptedConnector(failing_queries=frozenset({"jobs"}))
+    code, _connector = run_tool(
+        base_argv(tmp_path, "--include-jobs", "--include-job-step-text"),
+        connector,
+    )
+    assert code == 0
+    snapshot, _capture_dir = load_snapshot(tmp_path)
+    capabilities = snapshot["capabilities"]
+    assert capabilities["agent_jobs"] == "BLOCKED"
+    assert capabilities["agent_job_step_text"] == "PARTIAL"
+    assert snapshot["inventory"]["agent_jobs"] == []
+    assert JOB_COMMAND not in json.dumps(snapshot)
+    assert any(
+        "not linked to a job inventory" in warning
+        for warning in snapshot["warnings"]
+    )
+
+
+def test_step_text_own_failure_stays_blocked(tmp_path: Path) -> None:
+    connector = ScriptedConnector(
+        failing_queries=frozenset({"jobs", "job_step_commands"})
+    )
+    code, _connector = run_tool(
+        base_argv(tmp_path, "--include-jobs", "--include-job-step-text"),
+        connector,
+    )
+    assert code == 0
+    snapshot, _capture_dir = load_snapshot(tmp_path)
+    assert snapshot["capabilities"]["agent_job_step_text"] == "BLOCKED"
+    assert not any(
+        "not linked to a job inventory" in warning
+        for warning in snapshot["warnings"]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -676,6 +950,7 @@ def test_renderers_derive_from_one_snapshot_model(tmp_path: Path) -> None:
     assert DEFINITION_TEXT in json_text
     assert DEFINITION_TEXT not in markdown_text
     assert snapshot["capture"]["capture_id"] in markdown_text
+    assert "visibility limitation:" in markdown_text
 
 
 # ---------------------------------------------------------------------------
@@ -759,6 +1034,7 @@ def test_capture_context_is_complete(tmp_path: Path) -> None:
         "compatibility_level",
         "collation",
         "principal_name",
+        "visibility",
         "requested_scope",
         "effective_scope",
     }
@@ -776,6 +1052,14 @@ def test_capture_context_is_complete(tmp_path: Path) -> None:
         "engine_edition": 3,
     }
     assert capture["principal_name"] == "DOMAIN\\ro_inspector"
+    assert capture["visibility"] == {
+        "database_view_definition": True,
+        "agent_jobs": True,
+        "limitation": (
+            "Object-level DENY cannot be ruled out by the recorded"
+            " visibility probes."
+        ),
+    }
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", capture["captured_at_utc"])
     assert re.fullmatch(r"\d{8}T\d{6}Z-[0-9a-f]{8}", capture["capture_id"])
     assert capture["requested_scope"] == {

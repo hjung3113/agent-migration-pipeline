@@ -19,10 +19,13 @@ Boundary rules enforced by construction:
   stdout, or error text. Raw definitions and job-step commands exist
   only inside the local capture directory (not printed to stdout).
 - Completeness is evidence: zero rows never imply absence. Final rule
-  (user decision 2026-10-07): in-scope data partly retrieved = PARTIAL;
-  the source wholly inaccessible = BLOCKED; flag absent = NOT_REQUESTED;
-  COMPLETE only when every required query succeeded and nothing in
-  scope is unavailable.
+  (user decision 2026-10-07, extended by review round W-18-FIX1):
+  in-scope data partly retrieved = PARTIAL; the source wholly
+  inaccessible = BLOCKED; flag absent = NOT_REQUESTED; COMPLETE only
+  when every required query succeeded, nothing in scope is
+  unavailable, and the category's visibility precondition is proven
+  (capture.visibility). Unproven visibility keeps a successfully
+  queried category PARTIAL.
 """
 
 from __future__ import annotations
@@ -81,6 +84,34 @@ DEFINITION_ERROR = "ERROR"
 FLAG_INCLUDE_JOBS = "include_jobs"
 FLAG_INCLUDE_JOB_STEP_TEXT = "include_job_step_text"
 
+# Recorded visibility preconditions (design L224-228): fixed registry
+# probes whose non-secret boolean/NULL results gate COMPLETE. The
+# limitation string is a constant capture note, deliberately not a
+# warning: object-level DENY is not resolvable by these probes.
+VISIBILITY_DATABASE = "database_view_definition"
+VISIBILITY_JOBS = "agent_jobs"
+VISIBILITY_LIMITATION = (
+    "Object-level DENY cannot be ruled out by the recorded visibility"
+    " probes."
+)
+VISIBILITY_WARNINGS = {
+    VISIBILITY_DATABASE: (
+        "database visibility precondition unproven: VIEW DEFINITION on"
+        " the current database was not proven for the capture principal"
+    ),
+    VISIBILITY_JOBS: (
+        "agent job visibility precondition unproven: sysadmin or msdb"
+        " SQLAgentReaderRole/SQLAgentOperatorRole membership was not"
+        " proven for the capture principal"
+    ),
+}
+CAPABILITY_VISIBILITY = {
+    CAPABILITY_DATABASE_CATALOG: VISIBILITY_DATABASE,
+    CAPABILITY_MODULE_DEFINITIONS: VISIBILITY_DATABASE,
+    CAPABILITY_AGENT_JOBS: VISIBILITY_JOBS,
+    CAPABILITY_AGENT_JOB_STEP_TEXT: VISIBILITY_JOBS,
+}
+
 
 @dataclass(frozen=True)
 class QuerySpec:
@@ -132,6 +163,39 @@ QUERY_REGISTRY: tuple[QuerySpec, ...] = (
         category=CAPTURE_CATEGORY,
         mode="one",
         sql="SELECT SUSER_SNAME() AS [principal_name] ORDER BY 1;",
+    ),
+    # Visibility preconditions (design L224-228). A successful empty
+    # inventory is not an absence claim unless these are proven. The
+    # job probe needs affirmative evidence only: sysadmin membership,
+    # or the current login's msdb user being in a role that sees all
+    # jobs. A failed probe leaves visibility NULL (unproven).
+    QuerySpec(
+        name="database_visibility",
+        category=CAPTURE_CATEGORY,
+        mode="one",
+        sql=(
+            "SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE',"
+            " 'VIEW DEFINITION') AS [view_definition] ORDER BY 1;"
+        ),
+    ),
+    QuerySpec(
+        name="agent_visibility",
+        category=CAPTURE_CATEGORY,
+        mode="one",
+        sql=(
+            "SELECT CASE WHEN IS_SRVROLEMEMBER('sysadmin') = 1 THEN 1 "
+            "WHEN EXISTS ("
+            "SELECT 1 "
+            "FROM msdb.sys.database_principals AS mp "
+            "JOIN msdb.sys.database_role_members AS drm "
+            "ON drm.member_principal_id = mp.principal_id "
+            "JOIN msdb.sys.database_principals AS rp "
+            "ON rp.principal_id = drm.role_principal_id "
+            "WHERE mp.sid = SUSER_SID() "
+            "AND rp.name IN ('SQLAgentReaderRole', 'SQLAgentOperatorRole')"
+            ") THEN 1 ELSE 0 END AS [sees_all_jobs] "
+            "ORDER BY 1;"
+        ),
     ),
     # --- schemas/tables/columns ---
     QuerySpec(
@@ -309,7 +373,8 @@ QUERY_REGISTRY: tuple[QuerySpec, ...] = (
             "SELECT o.object_id, s.name AS [schema_name], "
             "o.name AS [object_name], o.[type], o.type_desc, "
             "o.create_date, o.modify_date, "
-            "m.is_encrypted, m.is_recompiled, m.execute_as_desc, "
+            "OBJECTPROPERTY(o.object_id, 'IsEncrypted') AS [is_encrypted], "
+            "m.is_recompiled, m.execute_as_principal_id, "
             "m.definition "
             "FROM sys.objects AS o "
             "JOIN sys.schemas AS s ON s.schema_id = o.schema_id "
@@ -325,6 +390,9 @@ QUERY_REGISTRY: tuple[QuerySpec, ...] = (
     # DML triggers live in sys.objects (same schema as their table);
     # database DDL triggers exist only in sys.triggers and carry no
     # schema, so they are covered under database-wide scope only.
+    # OBJECTPROPERTY('IsEncrypted') does not apply to database DDL
+    # triggers, so their encryption evidence is projected NULL and the
+    # availability reason stays UNKNOWN.
     QuerySpec(
         name="triggers",
         category="module_definitions",
@@ -333,7 +401,10 @@ QUERY_REGISTRY: tuple[QuerySpec, ...] = (
             "t.name AS [object_name], t.type_desc, "
             "t.is_disabled, t.is_instead_of_trigger, "
             "t.is_not_for_replication, te.type_desc AS [event_type], "
-            "m.is_encrypted, m.definition "
+            "CASE WHEN o.object_id IS NULL THEN NULL "
+            "ELSE OBJECTPROPERTY(t.object_id, 'IsEncrypted') "
+            "END AS [is_encrypted], "
+            "m.definition "
             "FROM sys.triggers AS t "
             "LEFT JOIN sys.objects AS o ON o.object_id = t.object_id "
             "LEFT JOIN sys.schemas AS s ON s.schema_id = o.schema_id "
@@ -358,14 +429,15 @@ QUERY_REGISTRY: tuple[QuerySpec, ...] = (
             "js.on_success_action, js.on_failure_action, "
             "sch.enabled AS [schedule_enabled], "
             "sch.freq_type, sch.freq_interval, sch.active_start_time, "
-            "sjs.next_run_date, sjs.next_run_time "
+            "sjs.next_run_date, sjs.next_run_time, "
+            "sjs.schedule_id, sch.name AS [schedule_name] "
             "FROM msdb.dbo.sysjobs AS j "
             "LEFT JOIN msdb.dbo.sysjobsteps AS js ON js.job_id = j.job_id "
             "LEFT JOIN msdb.dbo.sysjobschedules AS sjs "
             "ON sjs.job_id = j.job_id "
             "LEFT JOIN msdb.dbo.sysschedules AS sch "
             "ON sch.schedule_id = sjs.schedule_id "
-            "ORDER BY j.name, js.step_id, sch.name;"
+            "ORDER BY j.name, js.step_id, sch.name, sjs.schedule_id;"
         ),
     ),
     QuerySpec(
@@ -475,10 +547,12 @@ def _flag(value: Any) -> bool:
 
 
 def _definition_fields(raw: Any, encrypted: Any) -> dict[str, Any]:
-    """Definition-availability fields for one module/trigger record.
+    """Definition-availability fields for one definition-bearing record
+    (module, trigger, computed column, check/default constraint, or
+    filtered-index predicate).
 
     A NULL (or empty) definition is UNAVAILABLE; the reason is specific
-    only when the catalog itself gives evidence (is_encrypted), never
+    only when the catalog itself gives evidence (IsEncrypted), never
     invented. The raw text and its UTF-8 sha256 are recorded only when
     AVAILABLE.
     """
@@ -531,7 +605,6 @@ def _convert_columns(rows: Iterable[tuple]) -> list[dict[str, Any]]:
             "is_nullable": _flag(r[7]),
             "is_identity": _flag(r[8]),
             "is_computed": _flag(r[9]),
-            "computed_definition": _text(r[10]),
             "computed_is_persisted": _flag(r[11]),
             "collation_name": _text(r[12]),
             "identity_seed": _text(r[13]),
@@ -539,6 +612,11 @@ def _convert_columns(rows: Iterable[tuple]) -> list[dict[str, Any]]:
         }
         for r in rows
     ]
+    for record, r in zip(records, rows):
+        # Only computed columns carry an expression; a non-computed
+        # column is not "unavailable", it has no expression fields.
+        if record["is_computed"]:
+            record.update(_definition_fields(r[10], None))
     records.sort(key=lambda rec: (rec["object_id"] or 0, rec["column_id"] or 0))
     return records
 
@@ -617,13 +695,14 @@ def _convert_check_constraints(rows: Iterable[tuple]) -> list[dict[str, Any]]:
             "constraint_name": _text(r[1]),
             "is_disabled": _flag(r[2]),
             "is_not_trusted": _flag(r[3]),
-            "definition": _text(r[4]),
             "schema_name": _text(r[5]),
             "table_name": _text(r[6]),
             "column_name": _text(r[7]),
         }
         for r in rows
     ]
+    for record, r in zip(records, rows):
+        record.update(_definition_fields(r[4], None))
     records.sort(
         key=lambda rec: (
             rec["schema_name"] or "",
@@ -640,13 +719,14 @@ def _convert_default_constraints(rows: Iterable[tuple]) -> list[dict[str, Any]]:
             "object_id": r[0],
             "constraint_name": _text(r[1]),
             "is_system_named": _flag(r[2]),
-            "definition": _text(r[3]),
             "schema_name": _text(r[4]),
             "table_name": _text(r[5]),
             "column_name": _text(r[6]),
         }
         for r in rows
     ]
+    for record, r in zip(records, rows):
+        record.update(_definition_fields(r[3], None))
     records.sort(
         key=lambda rec: (
             rec["schema_name"] or "",
@@ -672,12 +752,16 @@ def _convert_indexes(rows: Iterable[tuple]) -> list[dict[str, Any]]:
                 "is_primary_key": _flag(r[5]),
                 "is_unique_constraint": _flag(r[6]),
                 "has_filter": _flag(r[7]),
-                "filter_definition": _text(r[8]),
                 "schema_name": _text(r[9]),
                 "table_name": _text(r[10]),
                 "columns": [],
             }
             grouped[key] = record
+            # A non-filtered index is not "unavailable": it has no
+            # predicate, so only filtered indexes carry availability
+            # fields for filter_definition.
+            if record["has_filter"]:
+                record.update(_definition_fields(r[8], None))
         record["columns"].append(
             {
                 "name": _text(r[12]),
@@ -711,9 +795,11 @@ def _convert_modules(rows: Iterable[tuple]) -> list[dict[str, Any]]:
             "object_type_desc": _text(r[4]),
             "created": _text(r[5]),
             "modified": _text(r[6]),
-            "is_encrypted": _flag(r[7]),
+            # OBJECTPROPERTY(..., 'IsEncrypted') is tri-state: NULL when
+            # the server cannot provide the property.
+            "is_encrypted": None if r[7] is None else _flag(r[7]),
             "is_recompiled": _flag(r[8]),
-            "execute_as": _text(r[9]),
+            "execute_as_principal_id": r[9],
         }
         record.update(_definition_fields(r[10], r[7]))
         records.append(record)
@@ -737,7 +823,9 @@ def _convert_triggers(rows: Iterable[tuple]) -> list[dict[str, Any]]:
                 "is_instead_of_trigger": _flag(r[5]),
                 "is_not_for_replication": _flag(r[6]),
                 "events": [],
-                "is_encrypted": _flag(r[8]),
+                # NULL for database DDL triggers: OBJECTPROPERTY does
+                # not apply, so encryption evidence is unknown.
+                "is_encrypted": None if r[8] is None else _flag(r[8]),
             }
             record.update(_definition_fields(r[9], r[8]))
             grouped[r[0]] = record
@@ -778,6 +866,8 @@ def _convert_jobs(rows: Iterable[tuple]) -> list[dict[str, Any]]:
                 "schedule_active_start_time": r[12],
                 "next_run_date": r[13],
                 "next_run_time": r[14],
+                "schedule_id": r[15],
+                "schedule_name": _text(r[16]),
             }
         )
     records.sort(
@@ -785,6 +875,8 @@ def _convert_jobs(rows: Iterable[tuple]) -> list[dict[str, Any]]:
             rec["job_name"] or "",
             rec["step_id"] if rec["step_id"] is not None else 0,
             rec["step_name"] or "",
+            rec["schedule_id"] if rec["schedule_id"] is not None else 0,
+            rec["schedule_name"] or "",
         )
     )
     return records
@@ -829,18 +921,25 @@ class _CategoryTally:
     failed: int = 0
     records: int = 0
     unavailable: int = 0
+    visibility_ok: bool | None = None
+    parent_failed: bool = False
 
     def status(self) -> str:
-        """Final completeness rule (user decision 2026-10-07): in-scope
-        data partly retrieved = PARTIAL; the source wholly inaccessible =
-        BLOCKED; flag absent = NOT_REQUESTED; COMPLETE only when every
-        required query succeeded and nothing in scope is unavailable.
-        Zero rows with proven access is COMPLETE, never a fake absence
-        claim beyond the recorded visibility preconditions."""
+        """Final completeness rule (user decision 2026-10-07, extended
+        by review round W-18-FIX1): in-scope data partly retrieved =
+        PARTIAL; the source wholly inaccessible = BLOCKED; flag absent
+        = NOT_REQUESTED. COMPLETE only when every required query
+        succeeded, nothing in scope is unavailable, and the category's
+        visibility precondition is proven (True). An unproven
+        precondition (False/NULL) keeps a successfully queried category
+        PARTIAL; agent_job_step_text without its successful parent jobs
+        query can never be COMPLETE."""
         if not self.requested:
             return STATUS_NOT_REQUESTED
         if self.failed and self.records == 0:
             return STATUS_BLOCKED
+        if self.parent_failed or self.visibility_ok is not True:
+            return STATUS_PARTIAL
         if self.failed or self.unavailable:
             return STATUS_PARTIAL
         return STATUS_COMPLETE
@@ -911,7 +1010,16 @@ def _new_capture_context() -> dict[str, Any]:
         "compatibility_level": None,
         "collation": None,
         "principal_name": None,
+        "visibility": {
+            VISIBILITY_DATABASE: None,
+            VISIBILITY_JOBS: None,
+            "limitation": VISIBILITY_LIMITATION,
+        },
     }
+
+
+def _visibility_value(value: Any) -> bool | None:
+    return None if value is None else bool(value)
 
 
 def _apply_capture_row(context: dict[str, Any], name: str, row: tuple) -> None:
@@ -929,6 +1037,10 @@ def _apply_capture_row(context: dict[str, Any], name: str, row: tuple) -> None:
         context["collation"] = _text(row[2])
     elif name == "principal":
         context["principal_name"] = _text(row[0])
+    elif name == "database_visibility":
+        context["visibility"][VISIBILITY_DATABASE] = _visibility_value(row[0])
+    elif name == "agent_visibility":
+        context["visibility"][VISIBILITY_JOBS] = _visibility_value(row[0])
 
 
 def _execute_inventory(
@@ -967,7 +1079,9 @@ def _execute_inventory(
                 run.add_rows(spec.name, fetched)
 
 
-def _finalize_inventory(run: _CaptureRun) -> dict[str, Any]:
+def _finalize_inventory(
+    run: _CaptureRun, context: dict[str, Any]
+) -> dict[str, Any]:
     converted: dict[str, list[dict[str, Any]]] = {}
     for name, spec in QUERY_BY_NAME.items():
         if name in _ROW_CONVERTERS:
@@ -996,12 +1110,62 @@ def _finalize_inventory(run: _CaptureRun) -> dict[str, Any]:
         + len(converted.get("default_constraints", []))
         + len(converted.get("indexes", []))
     )
+    catalog_unavailable = sum(
+        1
+        for record in (
+            *converted.get("columns", []),
+            *converted.get("check_constraints", []),
+            *converted.get("default_constraints", []),
+            *converted.get("indexes", []),
+        )
+        if record.get("definition_status") == DEFINITION_UNAVAILABLE
+    )
+    if catalog_unavailable:
+        run.warnings.append(
+            f"{catalog_unavailable} in-scope catalog expression(s)"
+            " unavailable (computed column, check/default constraint,"
+            " or filtered index)"
+        )
     module_records = len(modules) + len(triggers)
     run.tallies[CAPABILITY_DATABASE_CATALOG].records = catalog_records
+    run.tallies[CAPABILITY_DATABASE_CATALOG].unavailable = catalog_unavailable
     run.tallies[CAPABILITY_MODULE_DEFINITIONS].records = module_records
     run.tallies[CAPABILITY_MODULE_DEFINITIONS].unavailable = unavailable
     run.tallies[CAPABILITY_AGENT_JOBS].records = len(jobs)
-    run.tallies[CAPABILITY_AGENT_JOB_STEP_TEXT].records = len(command_rows)
+    # Only command evidence actually merged into the job inventory
+    # counts; when the parent jobs query failed there are no job
+    # records to attach, so retained evidence is zero.
+    run.tallies[CAPABILITY_AGENT_JOB_STEP_TEXT].records = sum(
+        1 for record in jobs if "command" in record
+    )
+
+    # F6: step text without its successful parent jobs query cannot be
+    # COMPLETE and must not masquerade as complete evidence.
+    jobs_tally = run.tallies[CAPABILITY_AGENT_JOBS]
+    step_tally = run.tallies[CAPABILITY_AGENT_JOB_STEP_TEXT]
+    step_tally.parent_failed = (
+        step_tally.requested and jobs_tally.requested and jobs_tally.failed > 0
+    )
+    if step_tally.parent_failed and not (
+        step_tally.failed and step_tally.records == 0
+    ):
+        run.warnings.append(
+            "agent job-step text is not linked to a job inventory:"
+            " the jobs query did not succeed"
+        )
+
+    # F1: requested COMPLETE requires the category's visibility
+    # precondition to be proven; an unproven precondition on a
+    # successfully queried category degrades to PARTIAL with a warning
+    # naming the missing precondition.
+    for capability, visibility_key in CAPABILITY_VISIBILITY.items():
+        tally = run.tallies[capability]
+        if not tally.requested:
+            continue
+        proven = context["visibility"].get(visibility_key)
+        tally.visibility_ok = proven is True
+        if proven is not True and not (tally.failed and tally.records == 0):
+            run.warnings.append(VISIBILITY_WARNINGS[visibility_key])
 
     return {
         "schemas": converted.get("schemas", []),
@@ -1065,6 +1229,9 @@ def render_markdown(snapshot: dict[str, Any]) -> str:
         f" {server['edition']} engine_edition={server['engine_edition']}"
     )
     lines.append(f"- principal: {capture['principal_name']}")
+    lines.append(
+        f"- visibility limitation: {capture['visibility']['limitation']}"
+    )
     lines.append(
         "- scope: "
         + ", ".join(
@@ -1150,11 +1317,18 @@ def render_markdown(snapshot: dict[str, Any]) -> str:
 
 class _UsageParser(argparse.ArgumentParser):
     """Usage errors exit 1 (design exit-code contract), not argparse's 2,
-    which is reserved for blocked/mismatch outcomes."""
+    which is reserved for blocked/mismatch outcomes. The diagnostic is
+    generic on purpose: rejected argument values are never echoed,
+    because a mistaken value can contain a connection secret."""
 
     def error(self, message: str) -> None:  # noqa: D401 - argparse contract
         self.print_usage(sys.stderr)
-        self.exit(1, f"{self.prog}: error: {message}\n")
+        self.exit(
+            1,
+            f"{self.prog}: error: invalid usage; a required option is"
+            " missing, malformed, or not accepted. Rejected argument"
+            " values are not echoed.\n",
+        )
 
 
 def _build_parser() -> _UsageParser:
@@ -1289,7 +1463,9 @@ def run_snapshot(args: argparse.Namespace) -> int:
         # Wrong-target guard: compare DB_NAME() before any other query
         # runs; on mismatch abort and write no capture. The guard's own
         # registry attestation always runs first and cannot be relaxed
-        # by this flag.
+        # by this flag. The comparison is exact: database-name equality
+        # depends on instance collation, and Python case folding must
+        # not invent identifier equivalence.
         if args.expect_database is not None:
             actual = context["database_name"]
             if actual is None:
@@ -1299,7 +1475,7 @@ def run_snapshot(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            if actual.casefold() != args.expect_database.strip().casefold():
+            if actual != args.expect_database:
                 print(
                     "blocked: expected database"
                     f" {args.expect_database!r} but connected to {actual!r}",
@@ -1307,14 +1483,23 @@ def run_snapshot(args: argparse.Namespace) -> int:
                 )
                 return 2
 
-        for name in ("server_properties", "database_properties", "principal"):
+        for name in (
+            "server_properties",
+            "database_properties",
+            "principal",
+            "database_visibility",
+            "agent_visibility",
+        ):
+            # msdb is touched only when jobs were requested (opt-in boundary).
+            if name == "agent_visibility" and not scope.include_jobs:
+                continue
             row = _run_capture_query(session, run, QUERY_BY_NAME[name])
             if row is not None:
                 _apply_capture_row(context, name, row)
 
         _execute_inventory(session, run)
 
-    inventory = _finalize_inventory(run)
+    inventory = _finalize_inventory(run, context)
     capabilities = _capabilities(run)
 
     capture_id = _new_capture_id()
@@ -1333,6 +1518,7 @@ def run_snapshot(args: argparse.Namespace) -> int:
             "compatibility_level": context["compatibility_level"],
             "collation": context["collation"],
             "principal_name": context["principal_name"],
+            "visibility": context["visibility"],
             "requested_scope": scope.as_dict(),
             "effective_scope": [item.as_dict() for item in scope.items()],
         },

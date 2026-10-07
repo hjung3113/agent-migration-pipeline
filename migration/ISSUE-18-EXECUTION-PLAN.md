@@ -15,7 +15,7 @@ Dependencies: #23 `docs/12-db-connection-secrets-contract.md` → `scripts/db/co
 - **게이트 1 통과** — 설계 309줄 + 의존 계약 2건(#23 209줄, #20 436줄) + 소비 모듈 5개 전문 읽음; 구현 판정 근거 줄은 §2-§4 인용.
 - **게이트 2 통과** — 본문 stale 미채택: 연결 문자열 env 주입→#23 프로필(설계 L79-92), `sp_helptext`→`sys.sql_modules`(guard가 `EXEC`를 `procedure-exec` 차단, `sql_classification.py:493`; #20 계약 L259-261), `INFORMATION_SCHEMA` 단독→`sys.*` 중심(설계 L30), markdown paste→raw/Git 경계(설계 L33, L234-250).
 - **게이트 3 조건부 통과** — 소비할 guard/resolver는 `main`에 존재하나 **M-1**: `EXPECTED_TARGETS` 전 프로필 빈 값(`target_metadata.py:41-46`)이라 `open_readonly`는 오늘 기준 항상 `GuardBlockedError("missing-target-metadata")`로 fail-closed(`db_guard.py:163-169`) — live 세션 활성화는 #20 소유 파일의 값 공급(사용자 배포 사실, #20 계약 L386)이 선행돼야 한다.
-- **게이트 4 미충족(기록)** — 사용자의 명시적 구현 승인은 아직 없음. 본 세션/본 문서는 plan-only이며 커밋·merge가 승인이 아니다(AGENTS.md rule 13).
+- **게이트 4 통과 (2026-10-07)** — 사용자가 계획 검토 후 "머지하고 작업이어해"로 구현 착수를 명시 승인(같은 답변에서 §6-1 PARTIAL/BLOCKED 제안 규칙 수용).
 - **게이트 5 통과** — 범위 = 설계 Phase 1 조건 11개(L279-291)+CLI/출력 계약(L108-248)+코멘트 10항목 이내. 비변경: 설계 문서 3종, `scripts/db/` 기존 5모듈, `validate_scaffold.py`, CI, `.env.example`, OQ 문서, `migration/features/**`.
 - **게이트 6 통과** — 재오픈 메커니즘 3중(상위 계획 원칙, rule 13, §5 트리거 11개).
 - **게이트 7 통과** — open PR 없음(본 세션 확인). 공유 파일: `.gitignore`(1행만 추가), `.opencode/` 2문서(#18 단독), `HANDOFF.md`(T-H1 in-place). #22 core와 병렬 가능하나 merge 직전 최신 main 재검토(상위 계획 L88-90).
@@ -95,7 +95,7 @@ T-2 요구: `db-analyzer.md` Procedure에 (i) live evidence 가용 시 inspector
 
 ## 6. 사용자 확인 항목 (open questions — 임의 확정 금지)
 
-1. **PARTIAL vs BLOCKED 경계 규칙**(P-6 [추론]): "일부 회수 성공=PARTIAL, 원천 전체 불가=BLOCKED"로 규정해도 되는지(설계 L228 미고정).
+1. **PARTIAL vs BLOCKED 경계 규칙 — 결정됨 (2026-10-07, 사용자 수용)**: 요청 범위에서 일부라도 회수 성공=PARTIAL, 원천 전체 접근 불가=BLOCKED. P-6는 더 이상 [추론]이 아니라 사용자 결정.
 2. **expected-target `mssql-prod-ro` 값 공급 시점**(M-1): 라이브 검증 전 사용자가 `target_metadata.py` 값을 공급하는 시점·절차(#18 세션이 아닌 별도 승인 하 변경).
 3. **live validation 환경**(비범위): DBA 승인 read-only 계정·msdb 가시성·`MSSQL_PROD_RO_CONN` 주입 확보 시점(설계 L94, Phase 1 조건).
 

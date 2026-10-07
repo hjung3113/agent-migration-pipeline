@@ -12,14 +12,15 @@ Last updated: 2026-10-07
   (`.claude/skills/issue-wave-conductor/`, adapted from FeedbackOps). It covers the rule-13 design gate, brief,
   omp/codex worker, host `verify.sh`, **one** final independent review, one fix round, a PR to `main`, and the
   user merge. Introduced in **PR #70** (`chore/issue-wave-conductor`), which is open and awaiting "merge it".
-- **Issue #18** (MSSQL read-only inspector, `scripts/db/mssql_inspect.py`): step 0 (execution plan) is in
-  progress. Worktree `~/orca/workspaces/agent-migration-pipeline/issue18-plan`, branch `hjung3113/issue18-plan`,
-  omp worker terminal `term_7b2ed54c-70d3-4b72-b7c4-a08d2b503f69`. Output: `migration/ISSUE-18-EXECUTION-PLAN.md`
-  plus `.issue18-plan-report.md` (sentinel `<!-- ISSUE18-PLAN-DONE -->`). Next: the conductor reads the plan and
-  checks it against the code, then stops for the user's implementation go-ahead (gate item 4 is not granted).
-  Worker findings so far: `EXPECTED_TARGETS` is empty, so every `open_readonly` fails closed today (tests must use
-  the patch seam); the merged `open_readonly` signature differs from #20's plan P-2, and the current file is ground
-  truth.
+- **Issue #18** (MSSQL read-only inspector, `scripts/db/mssql_inspect.py`): **design gate, waiting for the
+  user's "구현 시작".** Execution plan `migration/ISSUE-18-EXECUTION-PLAN.md` (108 lines) is committed as `a6821ec`
+  on local branch `hjung3113/issue18-plan` (worktree `~/orca/workspaces/agent-migration-pipeline/issue18-plan`,
+  not pushed; worker terminals closed). The conductor spot-checked its citations against the code and they hold.
+  DAG: T-1 inspector + tests ∥ T-2 `.opencode` db-analyzer/skill ∥ T-3 `.gitignore` → verify → one final review →
+  one fix round → PR. Open for the user (plan §6): (1) the PARTIAL vs BLOCKED rule (proposed: some data
+  retrieved = PARTIAL, source wholly unavailable = BLOCKED); (2) when the `mssql-prod-ro` expected-target values
+  arrive — until then every `open_readonly` fails closed, so tests use fakes/patch seams; (3) the live-validation
+  environment (out of scope).
 - **Track D order** (`migration/ISSUES-PLAN-DRAFT.md`): `#23 ✓ -> #20 ✓ -> (#18, #22 core) -> #22 live adapter ->
   #21 (deferred)`. DB consumers use `from scripts.db.db_guard import open_readonly, open_test_readwrite`.
 - **Track P** (#1, #2, #5, #6, #7, #8, #9, #11, #13, #14): merged. Several of these issues are still OPEN on GitHub.

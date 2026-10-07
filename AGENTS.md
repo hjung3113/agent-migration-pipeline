@@ -120,6 +120,12 @@ Discover -> Specify -> Grade Evidence -> Human Gate if needed
          -> PASS or Process/Rule Fix -> Repeat
 ```
 
+## Workflow operations
+
+Playbook for running issues with workers (design gate, briefs, host verification, one final independent review,
+PR, cleanup): `.claude/skills/issue-wave-conductor/`. Model routing comes from the shared
+`orca-dispatch-recipes/routing.tsv`. Merging stays the user's call.
+
 ## Handoff rule
 
 `HANDOFF.md` at the repo root is the single handoff file. Always update it

@@ -4,21 +4,17 @@ Single handoff file for this repo, updated in place (AGENTS.md "Handoff rule"). 
 only**. Past session logs live in Git: the last long-form version is `git show bef5b43:HANDOFF.md`, and
 `git log -p -- HANDOFF.md` has the full history.
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## Now
 
 - **Workflow:** issues run through the `issue-wave-conductor` skill (`.claude/skills/issue-wave-conductor/`,
   merged in PR #70): rule-13 design gate, brief, omp worker, host `verify.sh`, **one** final independent review
   (codex gpt-6.1-sol), one fix round, PR to `main`, user merge.
-- **Issue #18** (MSSQL read-only inspector, `scripts/db/mssql_inspect.py`): **PR open, waiting for "merge it".**
-  Branch `hjung3113/issue18-plan`, worktree `~/orca/workspaces/agent-migration-pipeline/issue18-plan` (keep until
-  merge; `.review/W-18-*` holds the brief, reports, final review, and verify notes). Final review: CHANGES-REQUIRED
-  (3 major, 4 minor). All were fixed in one round except three items declined by triage (secret-pattern detection
-  in scope flags, orphan job-step text, object-level DENY resolution). `verify.sh` ALL PASS, 680 tests. Live
-  MSSQL validation is out of scope: every `open_readonly` fails closed until the expected-target values arrive.
-  After merge: close #18, remove the worktree, and continue Track D at #22 core.
-- **Track D order** (`migration/ISSUES-PLAN-DRAFT.md`): `#23 ✓ -> #20 ✓ -> (#18, #22 core) -> #22 live adapter ->
+- **Issue #18 merged** (PR #71, `aa311aa`, issue closed, worktree removed). `main` re-verified: `verify.sh` ALL
+  PASS, 680 tests. Live MSSQL validation of the inspector is still pending (needs expected-target values + DBA env).
+- **Next: #22 core** (DB before/after snapshot + diff), starting at conductor step 0 (execution plan, then design gate).
+- **Track D order** (`migration/ISSUES-PLAN-DRAFT.md`): `#23 ✓ -> #20 ✓ -> (#18 ✓, #22 core) -> #22 live adapter ->
   #21 (deferred)`. DB consumers use `from scripts.db.db_guard import open_readonly, open_test_readwrite`.
 - **Track P** (#1, #2, #5, #6, #7, #8, #9, #11, #13, #14): merged. Several of these issues are still OPEN on GitHub.
   Check each against its merged PR and close it or record what remains.

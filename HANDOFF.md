@@ -13,7 +13,11 @@ Last updated: 2026-10-08
   (codex gpt-6.1-sol), one fix round, PR to `main`, user merge.
 - **Issue #18 merged** (PR #71, `aa311aa`, issue closed, worktree removed). `main` re-verified: `verify.sh` ALL
   PASS, 680 tests. Live MSSQL validation of the inspector is still pending (needs expected-target values + DBA env).
-- **Next: #22 core** (DB before/after snapshot + diff), starting at conductor step 0 (execution plan, then design gate).
+- **#22 core PR open, waiting on the user's merge**: `scripts/db/db_snapshot_diff.py` (plan
+  `migration/ISSUE-22-EXECUTION-PLAN.md`, branch `hjung3113/issue22-core`, worktree
+  `~/orca/workspaces/agent-migration-pipeline/issue22-core`). Final review CHANGES-REQUIRED → all 6 findings fixed in
+  one round; `verify.sh` ALL PASS, 782 tests. Issue #22 stays open for the live adapter phase (capture via
+  `db_guard`, `DbAssertionPort` adapter, negative control moved there by the user, parity-skill wiring).
 - **Track D order** (`migration/ISSUES-PLAN-DRAFT.md`): `#23 ✓ -> #20 ✓ -> (#18 ✓, #22 core) -> #22 live adapter ->
   #21 (deferred)`. DB consumers use `from scripts.db.db_guard import open_readonly, open_test_readwrite`.
 - **Track P** (#1, #2, #5, #6, #7, #8, #9, #11, #13, #14): merged. Several of these issues are still OPEN on GitHub.

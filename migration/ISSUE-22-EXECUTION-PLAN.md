@@ -12,8 +12,8 @@ Canonical design: `docs/issue-22-db-snapshot-diff-contract.md`(370줄, PR #48). 
 - **게이트 1 통과** — 설계 370줄 전문, 상위 계획 D-C, 이슈 코멘트 2건, 소비 모듈(`sql_classification.py` 공개 API `classify_batch` L139, `db_guard.open_readonly` L77, `migration/judge/ports.py`) 확인.
 - **게이트 2 통과** — 본문 stale 미채택: CSV 스냅샷→JSON 전용(설계 L46), comparison semantics를 도구가 읽어 적용→도구는 raw 구조 delta만, 의미론은 adapter(설계 L45, L214-227), "커넥터 주입"→read-only capability만(설계 L44, L156), whole-state 비교→feature-scoped delta(설계 L43, L88).
 - **게이트 3 통과** — core는 DB 비의존(상위 계획 L121). 재사용할 `classify_batch`는 순수 함수이고 driver-boundary 검사(`validate_scaffold.py:965-980`)가 금지하는 driver/connector import가 아님.
-- **게이트 4 미충족 — 사용자 승인 대기.** 본 문서의 커밋은 구현 승인이 아니다(rule 13).
-- **게이트 5 통과(조건: §6-1, §6-2 결정)** — 범위 = 상위 계획 L123-128 core 6항목 중 §6-1을 제외한 5항목 + plan 파일 정적 검증. capture/adapter/문서 연결은 범위 밖(§7).
+- **게이트 4 통과 (2026-10-08)** — 사용자가 계획 검토 후 "진행해"로 구현 착수와 §6-1·§6-2 권장안을 함께 승인.
+- **게이트 5 통과** — 범위 = 상위 계획 L123-128 core 6항목 중 §6-1을 제외한 5항목 + plan 파일 정적 검증. capture/adapter/문서 연결은 범위 밖(§7).
 - **게이트 6 통과** — §5 트리거 + rule 13.
 - **게이트 7 통과** — open PR 없음. 공유 파일은 `.gitignore` 1행뿐. 다른 진행 브랜치 없음.
 
@@ -73,13 +73,13 @@ T-1 테스트(설계 L315-332 중 core 해당분 1:1, 실제 DB 없음): (1) 동
 
 ## 6. 사용자 확인 항목 (임의 확정 금지)
 
-1. **C-6 negative control 시점** — 권장: live adapter 단계로 이동(§2 C-6 근거). 대안: core에 변형기만 넣고 adapter 단계에서 연결(검증 대상 없는 코드가 먼저 들어감). 상위 계획 L128의 core 목록을 바꾸는 결정이다.
-2. **P-4 빈 키 선언** — 권장: 새 필드 없이 `key_columns == []` ⇒ `max_rows == 1`. 대안: `"expect_single_row": true` 필드 추가(v1 스키마 확장).
+1. **C-6 negative control 시점 — 결정됨 (2026-10-08)**: live adapter 단계로 이동. core에는 변형기를 넣지 않는다.
+2. **P-4 빈 키 선언 — 결정됨 (2026-10-08)**: 새 필드 없이 `key_columns == []` ⇒ `max_rows == 1`. P-4는 더 이상 [추론]이 아니라 사용자 결정.
 3. (참고, 이번 결정 불요) live adapter 단계 선행 사실: 커넥터가 파라미터를 그대로 넘겨 paramstyle이 엔진별로 다름(`connectors/mssql.py:111-115`, `postgresql.py`), `fetch_all`이 결과 컬럼 이름을 돌려주는지 미확인, 부작용 캡처 대상 테스트 DB를 `open_readonly`로 열 프로필 결정(#20/#23) — 모두 adapter 계획에서 다룬다.
 
 ## 7. 명시적 비범위
 
-`capture` 서브커맨드·DB 접근·guard 연결(상위 계획 L130) / concrete `DbAssertionPort` adapter·behavior-contract 의미론 적용(설계 L214-240) / negative control(§6-1 결정 전) / `parity-verification` SKILL·verifier 절차·`docs/templates/verification.md` 연결(이슈 코멘트 7항 — 동작하는 capture 없이 절차를 쓰면 실행 불가능한 지시가 됨 **[추론]**) / validator에 plan 파일 검사 추가(현존 plan 파일 0개) / 설계 비목표 전부(설계 L345-356).
+`capture` 서브커맨드·DB 접근·guard 연결(상위 계획 L130) / concrete `DbAssertionPort` adapter·behavior-contract 의미론 적용(설계 L214-240) / negative control(§6-1 결정: live adapter 단계) / `parity-verification` SKILL·verifier 절차·`docs/templates/verification.md` 연결(이슈 코멘트 7항 — 동작하는 capture 없이 절차를 쓰면 실행 불가능한 지시가 됨 **[추론]**) / validator에 plan 파일 검사 추가(현존 plan 파일 0개) / 설계 비목표 전부(설계 L345-356).
 
 ## 8. PR/merge 권장
 

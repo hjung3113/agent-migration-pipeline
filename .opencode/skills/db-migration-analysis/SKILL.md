@@ -29,6 +29,8 @@ compatibility: OpenCode project skill
 5. [Input] Classify DB logic as integrity, business rule, query/reporting, or MSSQL-specific artifact, and identify data migration/compatibility risks.
 6. [Output] Write or return `migration/features/<feature-id>/db-dependency-report.md` with evidence, unknowns, and behavior-dependent findings.
 7. [Output] Propose PostgreSQL semantics only after the behavior is understood, and return any required feature-card/open-question updates to `migration-coordinator`.
+8. [Input] When live MSSQL evidence is available, capture it with `scripts/db/mssql_inspect.py snapshot --profile mssql-prod-ro` (the canonical live-MSSQL evidence path) and check its `capabilities` completeness before interpreting absence; source-code SQL strings may supplement the capture but never silently replace an unavailable required DB definition.
+9. [Output] Return `PARTIAL`/`BLOCKED` conclusions that preserve the uncertainty when required objects, definitions, or jobs remain invisible, and never copy credentials, raw captures, or unrestricted sensitive definitions into `migration/features/<feature-id>/db-dependency-report.md` or the coordinator handoff; reference capture ids and definition hashes instead.
 
 Do not mechanically translate T-SQL.
 

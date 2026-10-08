@@ -8,19 +8,16 @@ Last updated: 2026-10-07
 
 ## Now
 
-- **Workflow:** from 2026-10-07, issues run through the `issue-wave-conductor` skill
-  (`.claude/skills/issue-wave-conductor/`, adapted from FeedbackOps). It covers the rule-13 design gate, brief,
-  omp/codex worker, host `verify.sh`, **one** final independent review, one fix round, a PR to `main`, and the
-  user merge. Introduced in **PR #70** (`chore/issue-wave-conductor`), which is open and awaiting "merge it".
-- **Issue #18** (MSSQL read-only inspector, `scripts/db/mssql_inspect.py`): **design gate, waiting for the
-  user's "구현 시작".** Execution plan `migration/ISSUE-18-EXECUTION-PLAN.md` (108 lines) is committed as `a6821ec`
-  on local branch `hjung3113/issue18-plan` (worktree `~/orca/workspaces/agent-migration-pipeline/issue18-plan`,
-  not pushed; worker terminals closed). The conductor spot-checked its citations against the code and they hold.
-  DAG: T-1 inspector + tests ∥ T-2 `.opencode` db-analyzer/skill ∥ T-3 `.gitignore` → verify → one final review →
-  one fix round → PR. Open for the user (plan §6): (1) the PARTIAL vs BLOCKED rule (proposed: some data
-  retrieved = PARTIAL, source wholly unavailable = BLOCKED); (2) when the `mssql-prod-ro` expected-target values
-  arrive — until then every `open_readonly` fails closed, so tests use fakes/patch seams; (3) the live-validation
-  environment (out of scope).
+- **Workflow:** issues run through the `issue-wave-conductor` skill (`.claude/skills/issue-wave-conductor/`,
+  merged in PR #70): rule-13 design gate, brief, omp worker, host `verify.sh`, **one** final independent review
+  (codex gpt-6.1-sol), one fix round, PR to `main`, user merge.
+- **Issue #18** (MSSQL read-only inspector, `scripts/db/mssql_inspect.py`): **PR open, waiting for "merge it".**
+  Branch `hjung3113/issue18-plan`, worktree `~/orca/workspaces/agent-migration-pipeline/issue18-plan` (keep until
+  merge; `.review/W-18-*` holds the brief, reports, final review, and verify notes). Final review: CHANGES-REQUIRED
+  (3 major, 4 minor). All were fixed in one round except three items declined by triage (secret-pattern detection
+  in scope flags, orphan job-step text, object-level DENY resolution). `verify.sh` ALL PASS, 680 tests. Live
+  MSSQL validation is out of scope: every `open_readonly` fails closed until the expected-target values arrive.
+  After merge: close #18, remove the worktree, and continue Track D at #22 core.
 - **Track D order** (`migration/ISSUES-PLAN-DRAFT.md`): `#23 ✓ -> #20 ✓ -> (#18, #22 core) -> #22 live adapter ->
   #21 (deferred)`. DB consumers use `from scripts.db.db_guard import open_readonly, open_test_readwrite`.
 - **Track P** (#1, #2, #5, #6, #7, #8, #9, #11, #13, #14): merged. Several of these issues are still OPEN on GitHub.

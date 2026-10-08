@@ -227,6 +227,8 @@ def _validate_query(query: Any, required_parameters: Sequence[str], label: str) 
         raise PlanError(f"{label} is malformed SQL")
     if len(statements) != 1:
         raise PlanError(f"{label} must contain exactly one statement")
+    if _count_top_level_selects(statements[0]) > 1:
+        raise PlanError(f"{label} must contain exactly one statement")
     if _has_select_star(statements[0]):
         raise PlanError(f"{label} must not use select-star")
     placeholders = sum(
@@ -263,11 +265,17 @@ def _has_select_star(tokens: Sequence[Any]) -> bool:
 
 
 def _ends_top_clause(tokens: Sequence[Any], last_index: int) -> bool:
-    """True when ``tokens[last_index]`` ends a ``TOP n``/``TOP (n)``/``... PERCENT``/``... WITH TIES`` clause."""
+    """True when ``tokens[last_index]`` ends a ``TOP`` clause of any accepted form.
+
+    Covers ``TOP <literal|@param|?>``, ``TOP ( ... )`` with any balanced
+    content, and either form followed by ``PERCENT`` or ``WITH TIES``.
+    """
     if last_index < 0 or last_index >= len(tokens):
         return False
     token = tokens[last_index]
     if token.kind == "literal":
+        return last_index >= 1 and _is_word(tokens[last_index - 1], "TOP")
+    if token.kind == "word" and token.value.startswith("@"):
         return last_index >= 1 and _is_word(tokens[last_index - 1], "TOP")
     if token.kind == "symbol" and token.value == ")":
         open_index = _matching_open(tokens, last_index)
@@ -275,8 +283,7 @@ def _ends_top_clause(tokens: Sequence[Any], last_index: int) -> bool:
             return False
         if not _is_word(tokens[open_index - 1], "TOP"):
             return False
-        inner = tokens[open_index + 1 : last_index]
-        return len(inner) == 1 and inner[0].kind == "literal"
+        return _parens_balanced(tokens[open_index + 1 : last_index])
     if _is_word(token, "PERCENT"):
         return last_index >= 1 and _ends_top_clause(tokens, last_index - 1)
     if _is_word(token, "TIES"):
@@ -286,6 +293,21 @@ def _ends_top_clause(tokens: Sequence[Any], last_index: int) -> bool:
             and _ends_top_clause(tokens, last_index - 2)
         )
     return False
+
+
+def _parens_balanced(tokens: Sequence[Any]) -> bool:
+    """True when parentheses inside ``tokens`` balance out and never dip negative."""
+    depth = 0
+    for token in tokens:
+        if token.kind != "symbol":
+            continue
+        if token.value == "(":
+            depth += 1
+        elif token.value == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
 
 
 def _matching_open(tokens: Sequence[Any], close_index: int) -> int | None:
@@ -303,6 +325,41 @@ def _matching_open(tokens: Sequence[Any], close_index: int) -> int | None:
     return None
 
 
+_SET_OPERATORS = frozenset({"UNION", "INTERSECT", "EXCEPT"})
+
+
+def _count_top_level_selects(tokens: Sequence[Any]) -> int:
+    """Count depth-0 ``SELECT`` words that start a statement, not a set operand.
+
+    A depth-0 ``SELECT`` directly after ``UNION``/``INTERSECT``/``EXCEPT``
+    (optionally with ``ALL``/``DISTINCT`` in between) belongs to the same
+    compound statement; any other depth-0 ``SELECT`` starts a new one.
+    """
+    count = 0
+    depth = 0
+    for index, token in enumerate(tokens):
+        if token.kind == "symbol":
+            if token.value == "(":
+                depth += 1
+                continue
+            if token.value == ")":
+                depth -= 1
+                continue
+        if depth != 0 or token.kind != "word" or token.value.upper() != "SELECT":
+            continue
+        previous = tokens[index - 1] if index else None
+        if previous is not None and previous.kind == "word":
+            previous_word = previous.value.upper()
+            if previous_word in _SET_OPERATORS:
+                continue
+            if previous_word in {"ALL", "DISTINCT"} and index >= 2:
+                before = tokens[index - 2]
+                if before.kind == "word" and before.value.upper() in _SET_OPERATORS:
+                    continue
+        count += 1
+    return count
+
+
 def get_subject(plan: dict, subject_id: str) -> dict:
     """Return the validated plan subject with ``subject_id``."""
     subjects = plan.get("subjects") if isinstance(plan, dict) else None
@@ -318,34 +375,40 @@ def get_subject(plan: dict, subject_id: str) -> dict:
 
 
 def encode_value(value: Any) -> dict:
-    """Encode one DB scalar as a tagged canonical value ``{"t": ..., "v": ...}``."""
+    """Encode one DB scalar as a tagged canonical value ``{"t": ..., "v": ...}``.
+
+    Exact type checks: scalar subclasses (for example ``numpy.float64`` or a
+    ``float`` subclass with an overridden repr) have no approved canonical
+    representation and are blocked instead of silently coerced.
+    """
     if value is None:
         return {"t": "null", "v": None}
-    if isinstance(value, bool):
+    kind = type(value)
+    if kind is bool:
         return {"t": "bool", "v": value}
-    if isinstance(value, int):
+    if kind is int:
         return {"t": "int", "v": str(value)}
-    if isinstance(value, Decimal):
+    if kind is Decimal:
         if not value.is_finite():
             raise SnapshotBlocked("unsupported-type")
         return {"t": "decimal", "v": str(value)}
-    if isinstance(value, float):
+    if kind is float:
         if not math.isfinite(value):
             raise SnapshotBlocked("unsupported-type")
         return {"t": "float", "v": repr(value)}
-    if isinstance(value, str):
+    if kind is str:
         return {"t": "text", "v": value}
-    if isinstance(value, datetime):
+    if kind is datetime:
         if value.tzinfo is not None and value.utcoffset() is not None:
             return {"t": "datetime_tz", "v": value.isoformat()}
         return {"t": "datetime", "v": value.isoformat()}
-    if isinstance(value, date):
+    if kind is date:
         return {"t": "date", "v": value.isoformat()}
-    if isinstance(value, time):
+    if kind is time:
         if value.tzinfo is not None and value.utcoffset() is not None:
             return {"t": "time_tz", "v": value.isoformat()}
         return {"t": "time", "v": value.isoformat()}
-    if isinstance(value, (bytes, bytearray, memoryview)):
+    if kind in (bytes, bytearray, memoryview):
         return {"t": "binary", "v": bytes(value).hex()}
     raise SnapshotBlocked("unsupported-type")
 
@@ -397,7 +460,340 @@ def load_artifact(path: str | Path) -> dict:
         or version != FORMAT_VERSION
     ):
         raise ArtifactError("unknown artifact format or format_version")
+    if payload["format"] == SNAPSHOT_FORMAT:
+        _validate_snapshot_payload(payload)
+    else:
+        _validate_delta_payload(payload)
     return obj
+
+
+# ---------------------------------------------------------------------------
+# Artifact payload validation (capture invariants)
+# ---------------------------------------------------------------------------
+
+_ENCODER_TAGS = frozenset(
+    {
+        "null",
+        "bool",
+        "int",
+        "decimal",
+        "float",
+        "text",
+        "datetime",
+        "datetime_tz",
+        "date",
+        "time",
+        "time_tz",
+        "binary",
+    }
+)
+
+_SNAPSHOT_KEYS = frozenset(
+    {
+        "format",
+        "format_version",
+        "feature_id",
+        "run_id",
+        "fixture_ref",
+        "subject_id",
+        "mode",
+        "comparison_rule_ref",
+        "side",
+        "moment",
+        "engine",
+        "profile_identity",
+        "schema_revision",
+        "plan_version",
+        "query_digest",
+        "parameter_names",
+        "parameter_digest",
+        "columns",
+        "key_columns",
+        "max_rows",
+        "row_count",
+        "rows",
+        "captured_at",
+    }
+)
+
+_DELTA_KEYS = frozenset(
+    {
+        "format",
+        "format_version",
+        "feature_id",
+        "run_id",
+        "fixture_ref",
+        "subject_id",
+        "mode",
+        "comparison_rule_ref",
+        "side",
+        "engine",
+        "columns",
+        "key_columns",
+        "query_digest",
+        "parameter_digest",
+        "before_sha256",
+        "after_sha256",
+        "added",
+        "removed",
+        "updated",
+        "unchanged_count",
+    }
+)
+
+
+def _is_valid_tagged(value: Any) -> bool:
+    """True for a canonical tagged value ``{"t": tag, "v": value}``.
+
+    ``v`` is ``None`` only for the ``null`` tag, ``bool`` only for ``bool``,
+    and a ``str`` for every other encoder tag; this keeps Python's coercive
+    equality (``True == 1``) unreachable between differently tagged cells.
+    """
+    if not isinstance(value, dict) or set(value) != {"t", "v"}:
+        return False
+    tag = value["t"]
+    if tag == "null":
+        return value["v"] is None
+    if tag == "bool":
+        return isinstance(value["v"], bool)
+    return tag in _ENCODER_TAGS and isinstance(value["v"], str)
+
+
+def _require_exact_artifact_keys(payload: dict, expected: frozenset, label: str) -> None:
+    keys = set(payload)
+    unknown = sorted(keys - expected)
+    missing = sorted(expected - keys)
+    if unknown or missing:
+        raise ArtifactError(
+            f"{label} keys invalid (unknown={unknown}, missing={missing})"
+        )
+
+
+def _require_payload_id(payload: dict, field: str, label: str) -> None:
+    value = payload[field]
+    if not isinstance(value, str) or not ID_PATTERN.fullmatch(value):
+        raise ArtifactError(f"{label} {field} must match ^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _require_non_empty_str(payload: dict, field: str, label: str) -> None:
+    value = payload[field]
+    if not isinstance(value, str) or not value:
+        raise ArtifactError(f"{label} {field} must be a non-empty string")
+
+
+def _require_positive_int(payload: dict, field: str, label: str) -> int:
+    value = payload[field]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ArtifactError(f"{label} {field} must be a positive integer")
+    return value
+
+
+def _require_int(payload: dict, field: str, label: str) -> int:
+    value = payload[field]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ArtifactError(f"{label} {field} must be an integer")
+    return value
+
+
+def _require_columns(payload: dict, label: str) -> list:
+    columns = payload["columns"]
+    if (
+        not isinstance(columns, list)
+        or not columns
+        or any(not isinstance(name, str) or not name for name in columns)
+    ):
+        raise ArtifactError(
+            f"{label} columns must be a non-empty list of non-empty strings"
+        )
+    if len(set(columns)) != len(columns):
+        raise ArtifactError(f"{label} columns must be unique")
+    return columns
+
+
+def _require_key_columns(payload: dict, columns: list, label: str) -> list:
+    key_columns = payload["key_columns"]
+    if not isinstance(key_columns, list) or any(
+        not isinstance(name, str) or not name for name in key_columns
+    ):
+        raise ArtifactError(f"{label} key_columns must be a list of non-empty strings")
+    if len(set(key_columns)) != len(key_columns):
+        raise ArtifactError(f"{label} key_columns must be unique")
+    if any(name not in columns for name in key_columns):
+        raise ArtifactError(f"{label} key_columns must be a subset of columns")
+    return key_columns
+
+
+def _require_tagged_row(row: Any, width: int, label: str) -> None:
+    if not isinstance(row, list) or len(row) != width:
+        raise ArtifactError(f"{label} must have one cell per column")
+    if any(not _is_valid_tagged(cell) for cell in row):
+        raise ArtifactError(f"{label} contains an invalid tagged value")
+
+
+def _require_key_cells(key: Any, label: str) -> None:
+    if not isinstance(key, list):
+        raise ArtifactError(f"{label} must be a list of tagged values")
+    for cell in key:
+        if not _is_valid_tagged(cell):
+            raise ArtifactError(f"{label} contains an invalid tagged value")
+        if cell["t"] == "null":
+            raise ArtifactError(f"{label} contains a null key cell")
+
+
+def _validate_snapshot_payload(payload: Any) -> None:
+    """Reject snapshot payloads that violate the builder's capture invariants.
+
+    Raises ``ArtifactError`` with a reason only; payload values are never
+    echoed in the message.
+    """
+    label = "snapshot payload"
+    if not isinstance(payload, dict):
+        raise ArtifactError(f"{label} must be a JSON object")
+    _require_exact_artifact_keys(payload, _SNAPSHOT_KEYS, label)
+    if payload["format"] != SNAPSHOT_FORMAT:
+        raise ArtifactError(f"{label} format must be '{SNAPSHOT_FORMAT}'")
+    version = payload["format_version"]
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version != FORMAT_VERSION
+    ):
+        raise ArtifactError(f"{label} format_version must be {FORMAT_VERSION}")
+    for field in ("feature_id", "run_id", "subject_id"):
+        _require_payload_id(payload, field, label)
+    if payload["side"] not in SIDES:
+        raise ArtifactError(f"{label} side must be one of {SIDES}")
+    if payload["moment"] not in MOMENTS:
+        raise ArtifactError(f"{label} moment must be one of {MOMENTS}")
+    if payload["mode"] not in MODES:
+        raise ArtifactError(f"{label} mode must be one of {MODES}")
+    for field in (
+        "fixture_ref",
+        "comparison_rule_ref",
+        "engine",
+        "profile_identity",
+        "schema_revision",
+        "captured_at",
+        "query_digest",
+        "parameter_digest",
+    ):
+        _require_non_empty_str(payload, field, label)
+    parameter_names = payload["parameter_names"]
+    if not isinstance(parameter_names, list) or any(
+        not isinstance(name, str) or not name for name in parameter_names
+    ):
+        raise ArtifactError(
+            f"{label} parameter_names must be a list of non-empty strings"
+        )
+    if len(set(parameter_names)) != len(parameter_names):
+        raise ArtifactError(f"{label} parameter_names must be unique")
+    plan_version = payload["plan_version"]
+    if (
+        isinstance(plan_version, bool)
+        or not isinstance(plan_version, int)
+        or plan_version != 1
+    ):
+        raise ArtifactError(f"{label} plan_version must be the integer 1")
+    max_rows = _require_positive_int(payload, "max_rows", label)
+    columns = _require_columns(payload, label)
+    key_columns = _require_key_columns(payload, columns, label)
+    if not key_columns and max_rows != 1:
+        raise ArtifactError(
+            f"{label} empty key_columns is only valid with max_rows == 1"
+        )
+    rows = payload["rows"]
+    if not isinstance(rows, list):
+        raise ArtifactError(f"{label} rows must be a list")
+    row_count = _require_int(payload, "row_count", label)
+    if row_count != len(rows):
+        raise ArtifactError(f"{label} row_count does not match the number of rows")
+    if len(rows) > max_rows:
+        raise ArtifactError(f"{label} rows exceed max_rows")
+    width = len(columns)
+    key_indexes = [columns.index(name) for name in key_columns]
+    seen_keys: set = set()
+    for row in rows:
+        _require_tagged_row(row, width, f"{label} row")
+        key = [row[index] for index in key_indexes]
+        _require_key_cells(key, f"{label} key")
+        key_id = canonical_bytes(key).decode("utf-8")
+        if key_id in seen_keys:
+            raise ArtifactError(f"{label} contains duplicate keys")
+        seen_keys.add(key_id)
+
+
+def _validate_delta_payload(payload: Any) -> None:
+    """Reject delta payloads that ``compute_delta`` could not have produced.
+
+    Raises ``ArtifactError`` with a reason only; payload values are never
+    echoed in the message.
+    """
+    label = "delta payload"
+    if not isinstance(payload, dict):
+        raise ArtifactError(f"{label} must be a JSON object")
+    _require_exact_artifact_keys(payload, _DELTA_KEYS, label)
+    if payload["format"] != DELTA_FORMAT:
+        raise ArtifactError(f"{label} format must be '{DELTA_FORMAT}'")
+    version = payload["format_version"]
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version != FORMAT_VERSION
+    ):
+        raise ArtifactError(f"{label} format_version must be {FORMAT_VERSION}")
+    for field in ("feature_id", "run_id", "subject_id"):
+        _require_payload_id(payload, field, label)
+    if payload["side"] not in SIDES:
+        raise ArtifactError(f"{label} side must be one of {SIDES}")
+    if payload["mode"] not in MODES:
+        raise ArtifactError(f"{label} mode must be one of {MODES}")
+    for field in (
+        "fixture_ref",
+        "comparison_rule_ref",
+        "engine",
+        "query_digest",
+        "parameter_digest",
+        "before_sha256",
+        "after_sha256",
+    ):
+        _require_non_empty_str(payload, field, label)
+    columns = _require_columns(payload, label)
+    _require_key_columns(payload, columns, label)
+    unchanged = payload["unchanged_count"]
+    if isinstance(unchanged, bool) or not isinstance(unchanged, int) or unchanged < 0:
+        raise ArtifactError(f"{label} unchanged_count must be a non-negative integer")
+    width = len(columns)
+    for field in ("added", "removed"):
+        entries = payload[field]
+        if not isinstance(entries, list):
+            raise ArtifactError(f"{label} {field} must be a list")
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != {"key", "row"}:
+                raise ArtifactError(
+                    f"{label} {field} entry must contain exactly key and row"
+                )
+            _require_key_cells(entry["key"], f"{label} {field} key")
+            _require_tagged_row(entry["row"], width, f"{label} {field} row")
+    updated = payload["updated"]
+    if not isinstance(updated, list):
+        raise ArtifactError(f"{label} updated must be a list")
+    for entry in updated:
+        if not isinstance(entry, dict) or set(entry) != {
+            "key",
+            "changed_columns",
+            "before",
+            "after",
+        }:
+            raise ArtifactError(f"{label} updated entry keys invalid")
+        _require_key_cells(entry["key"], f"{label} updated key")
+        changed = entry["changed_columns"]
+        if not isinstance(changed, list) or any(
+            not isinstance(name, str) or not name or name not in columns
+            for name in changed
+        ):
+            raise ArtifactError(f"{label} changed_columns must reference columns")
+        _require_tagged_row(entry["before"], width, f"{label} updated before row")
+        _require_tagged_row(entry["after"], width, f"{label} updated after row")
 
 
 # ---------------------------------------------------------------------------
@@ -528,6 +924,12 @@ def compute_delta(before_env: dict, after_env: dict) -> dict:
         if before.get(field) != after.get(field):
             raise PairingBlocked(f"pairing-mismatch:{field}")
 
+    # Pairing checks keep their PairingBlocked contract for builder-shaped
+    # envelopes; structural validation runs before any indexing so malformed
+    # caller-built payloads fail as ArtifactError instead.
+    _validate_snapshot_payload(before)
+    _validate_snapshot_payload(after)
+
     columns, before_rows = _snapshot_rows(before)
     _, after_rows = _snapshot_rows(after)
     before_keys = set(before_rows)
@@ -610,7 +1012,12 @@ def _snapshot_rows(payload: dict) -> tuple[list[str], dict[str, tuple[list, list
         if not isinstance(row, list) or len(row) != len(columns):
             raise ArtifactError("artifact payload row width does not match columns")
         key = [row[index] for index in key_indexes]
-        keyed[canonical_bytes(key).decode("utf-8")] = (key, row)
+        key_id = canonical_bytes(key).decode("utf-8")
+        if key_id in keyed:
+            # Defensive: payload validation already rejects duplicate keys;
+            # never let dict assignment silently overwrite one.
+            raise ArtifactError("artifact payload contains duplicate keys")
+        keyed[key_id] = (key, row)
     return columns, keyed
 
 
@@ -631,22 +1038,24 @@ def render_markdown(envelopes: Iterable[dict]) -> str:
         digest = envelope.get("content_sha256")
         digest = digest if isinstance(digest, str) else payload_digest(payload)
         kind = payload.get("format")
-        side = payload.get("side")
         if kind == SNAPSHOT_FORMAT:
+            _validate_snapshot_payload(payload)
             moment = payload.get("moment")
-            counts = f"rows={payload.get('row_count')}"
+            counts = f"rows={payload['row_count']}"
             changed = "—"
         elif kind == DELTA_FORMAT:
+            _validate_delta_payload(payload)
             moment = "—"
             counts = (
-                f"added={len(payload.get('added') or [])}"
-                f" removed={len(payload.get('removed') or [])}"
-                f" updated={len(payload.get('updated') or [])}"
-                f" unchanged={payload.get('unchanged_count')}"
+                f"added={len(payload['added'])}"
+                f" removed={len(payload['removed'])}"
+                f" updated={len(payload['updated'])}"
+                f" unchanged={payload['unchanged_count']}"
             )
             changed = ", ".join(_changed_column_union(payload)) or "—"
         else:
             raise ArtifactError("unknown artifact format")
+        side = payload.get("side")
         cells = [
             _cell(kind),
             _cell(payload.get("subject_id")),
@@ -679,14 +1088,30 @@ def _changed_column_union(payload: dict) -> list[str]:
 
 
 def default_delta_output_path(payload: dict) -> Path:
-    return (
-        REPO_ROOT
-        / ".artifacts"
-        / "db"
-        / str(payload["feature_id"])
-        / str(payload["run_id"])
+    """Default delta destination under ``.artifacts/db``; never sanitizes input.
+
+    Unsafe ID/side values are rejected instead of being coerced into path
+    components, and the resolved destination must stay inside the artifact
+    root.
+    """
+    for field in ("feature_id", "run_id", "subject_id"):
+        value = payload.get(field)
+        if not isinstance(value, str) or not ID_PATTERN.fullmatch(value):
+            raise ArtifactError(
+                f"delta payload {field} is not a safe path component"
+            )
+    if payload.get("side") not in SIDES:
+        raise ArtifactError("delta payload side is not a safe path component")
+    root = (REPO_ROOT / ".artifacts" / "db").resolve()
+    path = (
+        root
+        / payload["feature_id"]
+        / payload["run_id"]
         / f"{payload['subject_id']}.{payload['side']}.delta.json"
-    )
+    ).resolve()
+    if not path.is_relative_to(root):
+        raise ArtifactError("default output path escapes the artifact root")
+    return path
 
 
 class _ArgumentParser(argparse.ArgumentParser):

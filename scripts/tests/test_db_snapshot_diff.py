@@ -518,3 +518,341 @@ def test_case15_default_output_path_is_git_ignored(tmp_path):
     )
     assert check.returncode == 0, check.stderr
     assert check.stdout.strip() == str(default_path)
+
+
+# ---------------------------------------------------------------------------
+# W-22-FIX1 regressions (final-review findings F1..F6)
+# ---------------------------------------------------------------------------
+
+
+def _rehashed(envelope: dict, **changes) -> dict:
+    """Caller-built envelope with a consistent recomputed digest."""
+    return dsd.make_envelope(dict(envelope["payload"], **changes))
+
+
+# --- F1: loaded snapshots must satisfy the capture invariants
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        pytest.param(
+            {
+                "rows": [
+                    [
+                        {"t": "text", "v": "B-1"},
+                        {"t": "text", "v": "open"},
+                        {"t": "decimal", "v": "10.00"},
+                    ],
+                    [
+                        {"t": "text", "v": "B-1"},
+                        {"t": "text", "v": "sent"},
+                        {"t": "decimal", "v": "20.00"},
+                    ],
+                ],
+                "row_count": 2,
+            },
+            id="duplicate-key",
+        ),
+        pytest.param(
+            {
+                "rows": [
+                    [
+                        {"t": "null", "v": None},
+                        {"t": "text", "v": "open"},
+                        {"t": "decimal", "v": "10.00"},
+                    ]
+                ],
+                "row_count": 1,
+            },
+            id="null-key",
+        ),
+        pytest.param(
+            {
+                "rows": [
+                    [
+                        {"t": "text", "v": f"B-{index:02d}"},
+                        {"t": "text", "v": "open"},
+                        {"t": "decimal", "v": "10.00"},
+                    ]
+                    for index in range(1, 12)
+                ],
+                "row_count": 11,
+            },
+            id="rows-over-max-rows",
+        ),
+        pytest.param({"row_count": 2}, id="row-count-mismatch"),
+    ],
+)
+def test_fix1_f1_malformed_snapshot_rejected_at_load_and_by_compute_delta(
+    changes, tmp_path
+):
+    before = build()
+    after = _rehashed(build(moment="after"), **changes)
+    with pytest.raises(ArtifactError):
+        dsd.load_artifact(write_json(tmp_path / "after.json", after))
+    with pytest.raises(ArtifactError):
+        compute_delta(before, after)
+
+
+def test_fix1_f1_empty_key_with_max_rows_ten_rejected_at_load_and_by_compute_delta(
+    tmp_path,
+):
+    plan = make_plan([make_subject(key_columns=[], max_rows=1)])
+    row = [["B-1", "open", Decimal("10.00")]]
+    before = _rehashed(build(plan, rows=row), max_rows=10)
+    after = _rehashed(build(plan, moment="after", rows=row), max_rows=10)
+    with pytest.raises(ArtifactError):
+        dsd.load_artifact(write_json(tmp_path / "before.json", before))
+    with pytest.raises(ArtifactError):
+        dsd.load_artifact(write_json(tmp_path / "after.json", after))
+    with pytest.raises(ArtifactError):
+        compute_delta(before, after)
+
+
+# --- F2: default output path refuses unsafe ID/side components
+
+@pytest.mark.parametrize("field", ["feature_id", "run_id", "subject_id"])
+@pytest.mark.parametrize("value", ["/abs/escape-w22fix1", ".."])
+def test_fix1_f2_unsafe_id_exits_one_without_writing(
+    tmp_path, monkeypatch, capsys, field, value
+):
+    before = _rehashed(build(), **{field: value})
+    after = build(moment="after")
+    before_path = write_json(tmp_path / "before.json", before)
+    after_path = write_json(tmp_path / "after.json", after)
+
+    writes = []
+    monkeypatch.setattr(
+        dsd, "_write_text_atomic", lambda path, text: writes.append(path)
+    )
+    assert (
+        dsd.main(["delta", "--before", str(before_path), "--after", str(after_path)])
+        == 1
+    )
+    assert writes == []
+    if value.startswith("/"):
+        assert not Path(value).exists()
+    if field == "feature_id" and value == "..":
+        assert not (REPO_ROOT / ".artifacts" / "run-1").exists()
+    assert "Traceback" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("field", ["feature_id", "run_id", "subject_id"])
+@pytest.mark.parametrize("value", ["/abs/escape-w22fix1", ".."])
+def test_fix1_f2_default_path_rejects_unsafe_components(field, value):
+    delta = compute_delta(build(), build(moment="after"))
+    with pytest.raises(ArtifactError):
+        dsd.default_delta_output_path(dict(delta["payload"], **{field: value}))
+
+
+def test_fix1_f2_default_path_rejects_unsafe_side_and_stays_inside_root():
+    delta = compute_delta(build(), build(moment="after"))
+    with pytest.raises(ArtifactError):
+        dsd.default_delta_output_path(dict(delta["payload"], side="sideways"))
+    expected = (
+        REPO_ROOT / ".artifacts" / "db" / "feat-demo" / "run-1" / "db-001.legacy.delta.json"
+    )
+    assert dsd.default_delta_output_path(delta["payload"]) == expected
+
+
+# --- F3: malformed payloads are rejected with sanitized errors
+
+@pytest.mark.parametrize("field", ["max_rows", "feature_id", "query_digest"])
+def test_fix1_f3_field_missing_on_both_sides_exits_one_without_traceback(
+    tmp_path, field
+):
+    before = dsd.make_envelope(
+        {k: v for k, v in build()["payload"].items() if k != field}
+    )
+    after = dsd.make_envelope(
+        {k: v for k, v in build(moment="after")["payload"].items() if k != field}
+    )
+    out = tmp_path / "delta.json"
+    result = cli(
+        "delta",
+        "--before",
+        str(write_json(tmp_path / "before.json", before)),
+        "--after",
+        str(write_json(tmp_path / "after.json", after)),
+        "--output",
+        str(out),
+    )
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        pytest.param(
+            {
+                "rows": [
+                    [
+                        {"t": "text", "v": "B-1"},
+                        f"RAW-{SENTINEL}",
+                        {"t": "decimal", "v": "10.00"},
+                    ]
+                ],
+                "row_count": 1,
+            },
+            id="untagged-cell",
+        ),
+        pytest.param(
+            {
+                "rows": [
+                    [
+                        {"t": "text", "v": "B-1"},
+                        {"t": "varchar", "v": SENTINEL},
+                        {"t": "decimal", "v": "10.00"},
+                    ]
+                ],
+                "row_count": 1,
+            },
+            id="unknown-tag",
+        ),
+        pytest.param(
+            {
+                "rows": [
+                    [
+                        {"t": "text", "v": "B-1"},
+                        {"t": "bool", "v": 1},
+                        {"t": "decimal", "v": "10.00"},
+                    ]
+                ],
+                "row_count": 1,
+            },
+            id="bool-cell-with-int-value",
+        ),
+        pytest.param(
+            {"row_count": [[{"t": "text", "v": f"RAW-{SENTINEL}"}]]},
+            id="row-stored-in-row-count",
+        ),
+    ],
+)
+def test_fix1_f3_malformed_payload_rejected_without_value_leak(tmp_path, changes):
+    before = build()
+    after = _rehashed(build(moment="after"), **changes)
+    path = write_json(tmp_path / "after.json", after)
+    with pytest.raises(ArtifactError) as excinfo:
+        dsd.load_artifact(path)
+    assert SENTINEL not in str(excinfo.value)
+    with pytest.raises(ArtifactError):
+        compute_delta(before, after)
+    rendered = cli("render", str(path))
+    assert rendered.returncode == 1
+    assert SENTINEL not in rendered.stdout
+    assert SENTINEL not in rendered.stderr
+
+
+def test_fix1_f3_delta_missing_field_rejected_by_render(tmp_path):
+    delta = compute_delta(build(), build(moment="after"))
+    broken = dsd.make_envelope(
+        {k: v for k, v in delta["payload"].items() if k != "unchanged_count"}
+    )
+    path = write_json(tmp_path / "delta.json", broken)
+    with pytest.raises(ArtifactError):
+        render_markdown([broken])
+    rendered = cli("render", str(path))
+    assert rendered.returncode == 1
+
+
+# --- F4: parameterized TOP forms are select-star negatives
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT TOP @n * FROM dbo.orders WHERE business_id = ?",
+        "SELECT TOP (?) * FROM dbo.orders WHERE business_id = ?",
+        "SELECT TOP (1 + 1) * FROM dbo.orders WHERE business_id = ?",
+        "SELECT TOP (?) PERCENT * FROM dbo.orders WHERE business_id = ?",
+    ],
+)
+def test_fix1_f4_parameterized_top_select_star_rejected(query):
+    with pytest.raises(PlanError):
+        validate_plan(make_plan([make_subject(legacy_query=query)]))
+
+
+# --- F5: undelimited batches are rejected; compound SELECTs stay valid
+
+def test_fix1_f5_undelimited_second_select_rejected():
+    query = (
+        "SELECT business_id FROM dbo.orders WHERE business_id = ?\n"
+        "SELECT status FROM dbo.orders"
+    )
+    with pytest.raises(PlanError):
+        validate_plan(make_plan([make_subject(legacy_query=query)]))
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "WITH cte AS (SELECT business_id FROM dbo.orders WHERE business_id = ?) "
+        "SELECT business_id FROM cte",
+        "WITH a AS (SELECT business_id FROM dbo.orders WHERE business_id = ?), "
+        "b AS (SELECT business_id FROM a) SELECT business_id FROM b",
+        "SELECT business_id FROM dbo.orders WHERE business_id = ? UNION "
+        "SELECT business_id FROM dbo.orders WHERE business_id = 1",
+        "SELECT business_id FROM dbo.orders WHERE business_id = ? UNION ALL "
+        "SELECT business_id FROM dbo.orders WHERE business_id = 1",
+        "SELECT business_id FROM dbo.orders WHERE business_id = ? INTERSECT "
+        "SELECT business_id FROM dbo.orders WHERE business_id = 1",
+        "SELECT business_id FROM dbo.orders WHERE business_id = ? EXCEPT "
+        "SELECT business_id FROM dbo.orders WHERE business_id = 1",
+        "SELECT business_id FROM dbo.orders WHERE business_id IN "
+        "(SELECT business_id FROM dbo.orders WHERE business_id = ?)",
+    ],
+)
+def test_fix1_f5_compound_select_forms_stay_valid(query):
+    validated = validate_plan(make_plan([make_subject(legacy_query=query)]))
+    assert validated["subjects"][0]["legacy_query"] == query
+
+
+def test_fix1_f5_parenthesized_union_counts_as_one_statement():
+    # End-to-end plan validation rejects a leading '(' via the existing
+    # classifier (unknown start); this pins that the F5 statement counter
+    # itself does not flag the parenthesized UNION form as a second statement.
+    query = (
+        "(SELECT business_id FROM dbo.orders WHERE business_id = ?) UNION "
+        "(SELECT business_id FROM dbo.orders WHERE business_id = 1)"
+    )
+    tokens, malformed = dsd._tokenize(query)
+    assert not malformed
+    statements, split_malformed = dsd._split_batch_tokens(tokens)
+    assert len(statements) == 1 and not split_malformed
+    assert dsd._count_top_level_selects(statements[0]) <= 1
+
+
+# --- F6: scalar subclasses have no approved representation
+
+
+class _WrappedFloat(float):
+    def __repr__(self) -> str:
+        return "WrappedFloat(1.0)"
+
+
+class _WrappedInt(int):
+    pass
+
+
+class _WrappedStr(str):
+    pass
+
+
+class _WrappedBytes(bytes):
+    pass
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(_WrappedFloat("1.0"), id="float-subclass"),
+        pytest.param(_WrappedInt(3), id="int-subclass"),
+        pytest.param(_WrappedStr("wrapped"), id="str-subclass"),
+        pytest.param(_WrappedBytes(b"ab"), id="bytes-subclass"),
+    ],
+)
+def test_fix1_f6_scalar_subclasses_are_blocked(value):
+    with pytest.raises(SnapshotBlocked) as excinfo:
+        encode_value(value)
+    assert excinfo.value.reason_code == "unsupported-type"
